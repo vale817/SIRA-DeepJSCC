@@ -24,19 +24,19 @@
 先确保 B1/B2 checkpoint 已存在：
 
 ```bash
-python train.py --latent_ch 2 --methods cnn semantic
+python -m scripts.train --latent_ch 2 --methods cnn semantic
 ```
 
 然后训练两个 SIRA 版本：
 
 ```bash
-python train.py --latent_ch 2 --methods sira_b1_init sira_b2_init
+python -m scripts.train --latent_ch 2 --methods sira_b1_init sira_b2_init
 ```
 
 如果 checkpoint 已存在并需要重新训练：
 
 ```bash
-python train.py --latent_ch 2 --methods sira_b1_init sira_b2_init --force
+python -m scripts.train --latent_ch 2 --methods sira_b1_init sira_b2_init --force
 ```
 
 训练输出：
@@ -51,7 +51,7 @@ checkpoints/sira_b2_init_awgn_c2.pt
 ## DIV2K 与 Kodak 评估
 
 ```bash
-python eval.py \
+python -m scripts.eval \
   --latent_ch 2 \
   --methods cnn semantic sira_b1_init sira_b2_init
 ```
@@ -59,7 +59,7 @@ python eval.py \
 ## COCO Object ROI 评估
 
 ```bash
-python eval_coco.py \
+python -m scripts.eval_coco \
   --coco_root data/coco \
   --latent_ch 2 \
   --methods cnn semantic sira_b1_init sira_b2_init
@@ -68,7 +68,7 @@ python eval_coco.py \
 ## Power Map 可视化
 
 ```bash
-python visualize_power_map.py \
+python -m scripts.visualize_power_map \
   --latent_ch 2 \
   --method sira_b1_init \
   --dataset coco \
@@ -76,7 +76,7 @@ python visualize_power_map.py \
   --snrs -2 5 15 \
   --out results/power_map_sira_b1_c2.png
 
-python visualize_power_map.py \
+python -m scripts.visualize_power_map \
   --latent_ch 2 \
   --method sira_b2_init \
   --dataset coco \

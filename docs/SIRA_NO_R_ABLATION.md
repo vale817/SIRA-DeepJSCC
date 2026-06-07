@@ -13,7 +13,7 @@ export SIRA_DINO_HUB_DIR=/root/autodl-tmp/torch_cache/hub
 export SIRA_DINO_SOURCE=local
 export SIRA_DINO_REPO_OR_DIR=/root/autodl-tmp/torch_cache/hub/facebookresearch_dinov2_main
 
-python train.py \
+python -m scripts.train \
   --latent_ch 2 \
   --methods sira_b2_no_r \
   --batch_size 16
@@ -29,7 +29,7 @@ checkpoints/sira_b2_no_r_awgn_c2_final.pt
 ## 2. DIV2K + Kodak 评估
 
 ```bash
-python eval.py \
+python -m scripts.eval \
   --latent_ch 2 \
   --methods semantic sira_b2_init sira_b2_no_r \
   --result_dir results/ablation_no_r_c2
@@ -38,7 +38,7 @@ python eval.py \
 ## 3. COCO Object ROI 评估
 
 ```bash
-python eval_coco.py \
+python -m scripts.eval_coco \
   --coco_root ~/autodl-pub/COCO2017 \
   --latent_ch 2 \
   --methods semantic sira_b2_init sira_b2_no_r \
@@ -56,7 +56,7 @@ python eval_coco.py \
 ## 5. 验证 R 是否真正改变 Power Map
 
 ```bash
-python analyze_r_sensitivity.py \
+python -m scripts.analyze_r_sensitivity \
   --latent_ch 2 \
   --dataset kodak \
   --methods sira_b2_init sira_b2_no_r \

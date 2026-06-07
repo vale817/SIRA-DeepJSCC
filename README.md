@@ -94,7 +94,7 @@ on CPU, but will be slower.
 Run the data-free structural test:
 
 ```bash
-python smoke_test.py
+python -m scripts.smoke_test
 ```
 
 ### 2. Prepare Data
@@ -141,13 +141,13 @@ DINOv2 experiments.
 Train the two backbones first:
 
 ```bash
-python train.py --latent_ch 2 --methods cnn semantic
+python -m scripts.train --latent_ch 2 --methods cnn semantic
 ```
 
 Then train frozen-backbone adapters:
 
 ```bash
-python train.py \
+python -m scripts.train \
   --latent_ch 2 \
   --methods sira_b1_init sira_b2_init sira_b2_no_r \
   --batch_size 16
@@ -161,7 +161,7 @@ checkpoints are saved as `.pt`; final-epoch checkpoints use `_final.pt`.
 DIV2K and Kodak:
 
 ```bash
-python eval.py \
+python -m scripts.eval \
   --latent_ch 2 \
   --methods cnn semantic sira_b1_init sira_b2_init sira_b2_no_r \
   --result_dir results/run_c2
@@ -170,7 +170,7 @@ python eval.py \
 COCO object ROI:
 
 ```bash
-python eval_coco.py \
+python -m scripts.eval_coco \
   --coco_root data/coco \
   --latent_ch 2 \
   --methods cnn semantic sira_b1_init sira_b2_init sira_b2_no_r \
@@ -180,13 +180,13 @@ python eval_coco.py \
 Low-SNR summary:
 
 ```bash
-python plot_low_snr.py --latent_ch 2 --result_dir results/run_c2
+python -m scripts.plot_low_snr --latent_ch 2 --result_dir results/run_c2
 ```
 
 Power-map visualization:
 
 ```bash
-python visualize_power_map.py \
+python -m scripts.visualize_power_map \
   --latent_ch 2 \
   --method sira_b2_init \
   --dataset kodak \
@@ -198,7 +198,7 @@ python visualize_power_map.py \
 R-module sensitivity:
 
 ```bash
-python analyze_r_sensitivity.py \
+python -m scripts.analyze_r_sensitivity \
   --latent_ch 2 \
   --dataset kodak \
   --methods sira_b2_init sira_b2_no_r \
@@ -207,21 +207,32 @@ python analyze_r_sensitivity.py \
 
 ## Repository Map
 
-| File | Purpose |
-|---|---|
-| `models.py` | DeepJSCC, DINOv2 importance, M/R/A, channel models, losses |
-| `train.py` | backbone and adapter training |
-| `eval.py` | DIV2K/Kodak reconstruction evaluation |
-| `eval_coco.py` | COCO object-ROI evaluation |
-| `plot_low_snr.py` | publication-style low-SNR tables and figures |
-| `visualize_power_map.py` | reconstruction, power-map, and error visualization |
-| `analyze_r_sensitivity.py` | quantitative SNR-to-power-map sensitivity analysis |
-| `smoke_test.py` | data-free structural check for every model variant |
-| `config.py` | experiment defaults and paths |
+```text
+SIRA-DeepJSCC/
+  sira/       # core models, datasets, and configuration
+  scripts/    # training, evaluation, plotting, and analysis entry points
+  docs/       # experiment definitions, findings, and release notes
+  results/    # representative JSON, tables, and figures
+```
 
-More detailed experiment notes are in [PROJECT_STATUS.md](PROJECT_STATUS.md),
-[SIRA_INIT_EXPERIMENT.md](SIRA_INIT_EXPERIMENT.md), and
-[SIRA_NO_R_ABLATION.md](SIRA_NO_R_ABLATION.md).
+| Path | Purpose |
+|---|---|
+| `sira/models.py` | DeepJSCC, DINOv2 importance, M/R/A, channels, and losses |
+| `sira/datasets.py` | DIV2K and Kodak data loaders |
+| `sira/config.py` | experiment defaults and paths |
+| `scripts/train.py` | backbone and adapter training |
+| `scripts/eval.py` | DIV2K/Kodak reconstruction evaluation |
+| `scripts/eval_coco.py` | COCO object-ROI evaluation |
+| `scripts/plot_low_snr.py` | publication-style low-SNR tables and figures |
+| `scripts/visualize_power_map.py` | reconstruction, power-map, and error visualization |
+| `scripts/analyze_r_sensitivity.py` | quantitative SNR-to-power-map analysis |
+| `scripts/smoke_test.py` | data-free structural check for every model variant |
+| `docs/` | experiment definitions, findings, and release notes |
+
+More detailed experiment notes are in
+[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md),
+[docs/SIRA_INIT_EXPERIMENT.md](docs/SIRA_INIT_EXPERIMENT.md), and
+[docs/SIRA_NO_R_ABLATION.md](docs/SIRA_NO_R_ABLATION.md).
 
 ## Limitations
 

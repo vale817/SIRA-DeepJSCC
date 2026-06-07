@@ -4,9 +4,9 @@
 # Visualize SIRA adaptive power maps under different SNRs.
 #
 # Usage:
-#   python visualize_power_map.py --latent_ch 2
-#   python visualize_power_map.py --latent_ch 2 --image data/kodak/kodim01.png
-#   python visualize_power_map.py --latent_ch 2 --dataset coco --index 12
+#   python -m scripts.visualize_power_map --latent_ch 2
+#   python -m scripts.visualize_power_map --latent_ch 2 --image data/kodak/kodim01.png
+#   python -m scripts.visualize_power_map --latent_ch 2 --dataset coco --index 12
 # ============================================================
 import argparse
 import glob
@@ -21,10 +21,10 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 
-from config import (
+from sira.config import (
     CHANNEL, LATENT_CH, CKPT_DIR, RESULT_DIR, CROP_SIZE,
 )
-from models import DeepJSCC, DEVICE, SIRA_METHODS
+from sira.models import DeepJSCC, DEVICE, SIRA_METHODS
 
 
 PALETTE = {

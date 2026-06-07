@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from config import (
+from .config import (
     IMPORTANCE_MODE, DINO_MODEL_NAME, DINO_INPUT_SIZE, DINO_TEMPERATURE,
     DINO_REC_ALPHA, DINO_M_LAMBDA, DINO_HUB_DIR, DINO_SOURCE,
     DINO_REPO_OR_DIR, CROP_SIZE
@@ -162,10 +162,10 @@ class DINOv2Importance(nn.Module):
             raise RuntimeError(
                 'Failed to load DINOv2 via torch.hub. If AutoDL cannot access '
                 'GitHub/checkpoint URLs, either run with '
-                '`SIRA_IMPORTANCE_MODE=edge python train.py ...`, or download '
+                '`SIRA_IMPORTANCE_MODE=edge python -m scripts.train ...`, or download '
                 'facebookresearch/dinov2 to the machine and run with '
                 '`SIRA_DINO_SOURCE=local '
-                'SIRA_DINO_REPO_OR_DIR=/path/to/dinov2 python train.py ...`.'
+                'SIRA_DINO_REPO_OR_DIR=/path/to/dinov2 python -m scripts.train ...`.'
             ) from exc
         self.backbone.eval()
         for p in self.backbone.parameters():

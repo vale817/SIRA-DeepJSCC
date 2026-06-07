@@ -2,9 +2,9 @@
 # ============================================================
 # eval_coco.py  —  COCO object-ROI evaluation
 # 用法：
-#   python eval_coco.py
-#   python eval_coco.py --coco_root /autodl-pub/COCO2017
-#   python eval_coco.py --max_images 500
+#   python -m scripts.eval_coco
+#   python -m scripts.eval_coco --coco_root data/coco
+#   python -m scripts.eval_coco --max_images 500
 # ============================================================
 import argparse
 import json
@@ -21,11 +21,11 @@ import matplotlib.pyplot as plt
 import lpips as lpips_lib
 from tqdm import tqdm
 
-from config import (
+from sira.config import (
     CHANNEL, LATENT_CH, SNR_SWEEP, CKPT_DIR, RESULT_DIR,
     METHOD_NAMES, METHOD_STYLE, CROP_SIZE, SEED,
 )
-from models import DeepJSCC, DEVICE, SIRA_METHODS
+from sira.models import DeepJSCC, DEVICE, SIRA_METHODS
 
 
 def batch_psnr(x_hat, x):
@@ -110,7 +110,7 @@ def find_coco_paths(coco_root):
             '  mkdir -p data/coco\n'
             '  unzip /autodl-pub/COCO2017/val2017.zip -d data/coco\n'
             '  unzip /autodl-pub/COCO2017/annotations_trainval2017.zip -d data/coco\n'
-            '  python eval_coco.py --coco_root data/coco'
+            '  python -m scripts.eval_coco --coco_root data/coco'
         )
     return image_dir, ann_file
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # ============================================================
 # train.py  —  训练 B1 / B2 / SIRA，顺序执行
-# 用法：python train.py
-#      python train.py --methods cnn          # 只训 B1
-#      python train.py --methods sira_b1_init # 加载 B1(cnn)，只训 SIRA M/R/A
-#      python train.py --methods sira_b2_init # 加载 B2(semantic)，只训 SIRA M/R/A
-#      python train.py --methods sira_b2_no_r # 加载 B2，只训 M/A（R 消融）
-#      python train.py --channel rayleigh     # 换信道
+# 用法：python -m scripts.train
+#      python -m scripts.train --methods cnn
+#      python -m scripts.train --methods sira_b1_init
+#      python -m scripts.train --methods sira_b2_init
+#      python -m scripts.train --methods sira_b2_no_r
+#      python -m scripts.train --channel rayleigh
 # ============================================================
 import os
 import argparse
@@ -17,14 +17,14 @@ import torch
 import torch.amp
 from tqdm import tqdm
 
-import models
-from config import (
+from sira import models
+from sira.config import (
     CHANNEL, LATENT_CH, EPOCHS_B1, EPOCHS_B2, EPOCHS_SIRA,
     BATCH_SIZE, LR, TRAIN_SNR_RANGE, SNR_SWEEP,
     CKPT_DIR, RESULT_DIR, SEED, IMPORTANCE_MODE,
 )
-from datasets import get_div2k_loaders
-from models import DeepJSCC, loss_fn, DEVICE, SIRA_METHODS
+from sira.datasets import get_div2k_loaders
+from sira.models import DeepJSCC, loss_fn, DEVICE, SIRA_METHODS
 
 
 SIRA_INIT_SOURCE = {

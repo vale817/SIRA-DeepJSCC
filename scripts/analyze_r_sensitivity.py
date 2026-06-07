@@ -2,9 +2,9 @@
 """Measure whether SIRA's reliability mapper changes spatial power allocation.
 
 Examples:
-  python analyze_r_sensitivity.py --latent_ch 2 --dataset kodak
-  python analyze_r_sensitivity.py --latent_ch 2 --dataset div2k --max_images 24
-  python analyze_r_sensitivity.py --latent_ch 2 --image data/kodak/kodim05.png
+  python -m scripts.analyze_r_sensitivity --latent_ch 2 --dataset kodak
+  python -m scripts.analyze_r_sensitivity --latent_ch 2 --dataset div2k --max_images 24
+  python -m scripts.analyze_r_sensitivity --latent_ch 2 --image data/kodak/kodim05.png
 """
 import argparse
 import csv
@@ -17,9 +17,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from config import CHANNEL, LATENT_CH, RESULT_DIR
-from models import DEVICE, SIRA_NO_R_METHODS, power_normalize
-from visualize_power_map import list_images, load_image_tensor, load_sira
+from sira.config import CHANNEL, LATENT_CH, RESULT_DIR
+from sira.models import DEVICE, SIRA_NO_R_METHODS, power_normalize
+from scripts.visualize_power_map import list_images, load_image_tensor, load_sira
 
 
 COLORS = {

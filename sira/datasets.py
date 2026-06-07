@@ -10,7 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
 
-from config import (
+from .config import (
     DIV2K_TRAIN_HR, DIV2K_VAL_HR, KODAK_DIR,
     CROP_SIZE, BATCH_SIZE, SEED
 )

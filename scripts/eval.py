@@ -2,9 +2,9 @@
 # ============================================================
 # eval.py  —  完整评估：PSNR / SSIM / LPIPS / ROI-PSNR
 #             测试集：DIV2K val（域内）+ Kodak-24（域外泛化）
-# 用法：python eval.py
-#      python eval.py --channel rayleigh
-#      python eval.py --skip_kodak      # 跳过 Kodak
+# 用法：python -m scripts.eval
+#      python -m scripts.eval --channel rayleigh
+#      python -m scripts.eval --skip_kodak
 # ============================================================
 import os
 import argparse
@@ -17,13 +17,13 @@ import matplotlib.pyplot as plt
 import lpips as lpips_lib
 from tqdm import tqdm
 
-import models
-from config import (
+from sira import models
+from sira.config import (
     CHANNEL, LATENT_CH, SNR_SWEEP, CKPT_DIR, RESULT_DIR,
     METHOD_NAMES, METHOD_STYLE, CROP_SIZE, IMPORTANCE_MODE, SEED,
 )
-from datasets import get_div2k_loaders, get_kodak_loader
-from models import DeepJSCC, semantic_importance, DEVICE, SIRA_METHODS
+from sira.datasets import get_div2k_loaders, get_kodak_loader
+from sira.models import DeepJSCC, semantic_importance, DEVICE, SIRA_METHODS
 
 
 # ── 指标函数 ──────────────────────────────────────────────────

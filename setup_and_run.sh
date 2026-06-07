@@ -76,7 +76,7 @@ fi
 echo ""
 echo "[3/3] Optional execution..."
 if [ "${RUN_TRAIN}" = "1" ]; then
-    python train.py \
+    python -m scripts.train \
         --latent_ch "${LATENT_CH}" \
         --batch_size "${BATCH_SIZE}" \
         --methods cnn semantic sira_b1_init sira_b2_init \
@@ -86,7 +86,7 @@ else
 fi
 
 if [ "${RUN_EVAL}" = "1" ]; then
-    python eval.py \
+    python -m scripts.eval \
         --latent_ch "${LATENT_CH}" \
         --methods cnn semantic sira_b1_init sira_b2_init \
         --importance_mode "${SIRA_IMPORTANCE_MODE}" \

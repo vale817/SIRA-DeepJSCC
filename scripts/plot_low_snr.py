@@ -4,8 +4,8 @@
 # Focused low-SNR summary for SIRA experiments.
 #
 # Usage:
-#   python plot_low_snr.py --latent_ch 2
-#   python plot_low_snr.py --latent_ch 2 --snrs -2 0 2
+#   python -m scripts.plot_low_snr --latent_ch 2
+#   python -m scripts.plot_low_snr --latent_ch 2 --snrs -2 0 2
 # ============================================================
 import argparse
 import csv
@@ -17,7 +17,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
-from config import RESULT_DIR, CHANNEL, LATENT_CH, METHOD_NAMES, METHOD_STYLE
+from sira.config import RESULT_DIR, CHANNEL, LATENT_CH, METHOD_NAMES, METHOD_STYLE
 
 
 DATASETS = [

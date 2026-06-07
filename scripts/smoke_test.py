@@ -2,7 +2,7 @@
 """Data-free structural smoke test for all implemented model variants."""
 import torch
 
-from models import DeepJSCC, SIRA_METHODS
+from sira.models import DeepJSCC, SIRA_METHODS
 
 
 def count_parameters(model, trainable_only=False):

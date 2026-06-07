@@ -1,0 +1,54 @@
+# Model checkpoints (large binary files)
+checkpoints/
+*.pt
+*.pth
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+.env
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Large data files (datasets should not be in git)
+data/
+datasets/
+*.zip
+
+# Torch Hub / model caches
+.torch_hub/
+torch_cache/
+
+# Generated experiment runs (tracked reference results remain versioned)
+results/run*/
+results/ablation*/
+results/r_sensitivity*/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/

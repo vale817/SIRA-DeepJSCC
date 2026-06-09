@@ -38,9 +38,16 @@ def main():
             assert model._last_sira['effective_power_symbol'].shape == (2, 2, 32, 32)
             assert model._last_sira['effective_power_map_spatial'].shape == (2, 1, 32, 32)
             assert model._last_sira['power_alpha'].shape == (2, 1, 1, 1)
+            assert model._last_sira['transmit_energy'].shape == (2,)
             assert model._last_sira['low_snr_blend_lambda'].shape == (2, 1, 1, 1)
             power_sum = model._last_sira['power_symbol'].reshape(2, -1).sum(dim=1)
             assert torch.allclose(power_sum, torch.full_like(power_sum, 2 * 32 * 32), rtol=1e-4)
+            assert torch.allclose(
+                model._last_sira['transmit_energy'],
+                torch.ones(2),
+                rtol=1e-5,
+                atol=1e-6,
+            )
             assert model._last_sira['semantic_risk'].shape == (2, 2, 32, 32)
 
         print(

@@ -549,6 +549,7 @@ class DeepJSCC(nn.Module):
                 z, power_symbol,
             )
             z = power_normalize(z)
+            transmit_energy = z.reshape(z.shape[0], -1).pow(2).mean(dim=1)
             power_map = power_symbol.mean(dim=1, keepdim=True)
             effective_power_map = effective_power_symbol.mean(dim=1, keepdim=True)
             self._last_sira = {
@@ -559,6 +560,7 @@ class DeepJSCC(nn.Module):
                 'power_symbol': power_symbol,
                 'effective_power_symbol': effective_power_symbol,
                 'power_alpha': power_alpha,
+                'transmit_energy': transmit_energy,
                 'power_map_spatial': power_map,
                 'effective_power_map_spatial': effective_power_map,
                 'power_map': power_map,

@@ -21,10 +21,12 @@ from sira import models
 from sira.config import (
     CHANNEL, LATENT_CH, EPOCHS_B1, EPOCHS_B2, EPOCHS_SIRA,
     BATCH_SIZE, LR, TRAIN_SNR_RANGE, SNR_SWEEP,
-    CKPT_DIR, RESULT_DIR, SEED, IMPORTANCE_MODE,
+    CKPT_DIR, RESULT_DIR, SEED, IMPORTANCE_MODE, ALLOCATION_MODE,
 )
 from sira.datasets import get_div2k_loaders
-from sira.models import DeepJSCC, loss_fn, DEVICE, SIRA_METHODS
+from sira.models import (
+    DeepJSCC, loss_fn, DEVICE, SIRA_METHODS, load_compatible_state_dict,
+)
 
 
 SIRA_INIT_SOURCE = {
@@ -68,17 +70,26 @@ def load_init_into_sira(net, init_method, channel=CHANNEL, latent_ch=LATENT_CH):
             f'{net.method} 需要先训练 {init_method}，checkpoint 不存在：{src}'
         )
     state = torch.load(src, map_location=DEVICE)
-    missing, unexpected = net.load_state_dict(state, strict=False)
+    missing, unexpected, skipped = load_compatible_state_dict(net, state)
     print(f'loaded {init_method} checkpoint into {net.method} → {src}')
-    print(f'  SIRA-only params (missing): {len(missing)} | unexpected: {len(unexpected)}')
+    print(
+        f'  missing: {len(missing)} | unexpected: {len(unexpected)} '
+        f'| skipped shape/name mismatches: {len(skipped)}'
+    )
 
 
 def train_one_method(method, channel=CHANNEL, latent_ch=LATENT_CH,
-                     epochs=50, batch_size=BATCH_SIZE, lr=LR):
+                     epochs=50, batch_size=BATCH_SIZE, lr=LR, seed=SEED,
+                     allocation_mode=ALLOCATION_MODE):
 
     train_loader, val_loader = get_div2k_loaders(batch_size=batch_size)
 
-    net = DeepJSCC(method=method, latent_ch=latent_ch, channel=channel).to(DEVICE)
+    net = DeepJSCC(
+        method=method,
+        latent_ch=latent_ch,
+        channel=channel,
+        allocation_mode=allocation_mode,
+    ).to(DEVICE)
 
     if method in SIRA_METHODS:
         load_init_into_sira(net, SIRA_INIT_SOURCE[method], channel, latent_ch)
@@ -89,7 +100,7 @@ def train_one_method(method, channel=CHANNEL, latent_ch=LATENT_CH,
 
     # Model/DINO initialization may consume RNG state. Reset here so methods
     # receive matched data order, sampled SNRs, and channel-noise sequences.
-    seed_everything()
+    seed_everything(seed)
 
     trainable = [p for p in net.parameters() if p.requires_grad]
     print(f'\n[{method}] trainable params: '
@@ -163,6 +174,7 @@ def train_one_method(method, channel=CHANNEL, latent_ch=LATENT_CH,
 
 
 def main():
+    global CKPT_DIR
     parser = argparse.ArgumentParser()
     parser.add_argument('--methods',  nargs='+',
                         default=['cnn', 'semantic', 'sira_b1_init', 'sira_b2_init'],
@@ -174,19 +186,43 @@ def main():
     parser.add_argument('--epochs_sira', type=int, default=EPOCHS_SIRA)
     parser.add_argument('--batch_size',  type=int, default=BATCH_SIZE)
     parser.add_argument('--lr', type=float, default=LR)
+    parser.add_argument('--seed', type=int, default=SEED)
+    parser.add_argument('--ckpt_dir', default=CKPT_DIR)
     parser.add_argument('--importance_mode', default=IMPORTANCE_MODE,
                         choices=['edge', 'dino'],
                         help='semantic importance backend; edge avoids DINOv2 download')
+    parser.add_argument('--allocation_mode', default=ALLOCATION_MODE,
+                        choices=['hard', 'soft'],
+                        help='hard KKT water-filling or low-SNR stabilized soft blend')
     parser.add_argument('--force', action='store_true',
                         help='retrain selected methods even if checkpoints exist')
     args = parser.parse_args()
 
+    CKPT_DIR = args.ckpt_dir
+    os.makedirs(CKPT_DIR, exist_ok=True)
     models.IMPORTANCE_MODE = args.importance_mode
-    seed_everything()
+    seed_everything(args.seed)
     print(f'Device: {DEVICE}')
     print(f'Methods to train: {args.methods}')
     print(f'Channel: {args.channel}  latent_ch: {args.latent_ch}')
+    print(f'Seed: {args.seed}')
+    print(f'Checkpoint dir: {CKPT_DIR}')
     print(f'Importance mode: {models.IMPORTANCE_MODE}')
+    print(f'Allocation mode: {args.allocation_mode}')
+    with open(os.path.join(CKPT_DIR, 'run_config.json'), 'w') as f:
+        json.dump({
+            'methods': args.methods,
+            'channel': args.channel,
+            'latent_ch': args.latent_ch,
+            'seed': args.seed,
+            'importance_mode': args.importance_mode,
+            'allocation_mode': args.allocation_mode,
+            'epochs_b1': args.epochs_b1,
+            'epochs_b2': args.epochs_b2,
+            'epochs_sira': args.epochs_sira,
+            'batch_size': args.batch_size,
+            'lr': args.lr,
+        }, f, indent=2)
 
     epoch_map = {
         'cnn':      args.epochs_b1,
@@ -199,7 +235,7 @@ def main():
 
     for method in args.methods:
         # Keep data order and newly initialized SIRA modules comparable.
-        seed_everything()
+        seed_everything(args.seed)
         # 如果 checkpoint 已存在就跳过
         path = ckpt_path(method, args.channel, args.latent_ch)
         if os.path.exists(path) and not args.force:
@@ -212,6 +248,8 @@ def main():
             epochs=epoch_map[method],
             batch_size=args.batch_size,
             lr=args.lr,
+            seed=args.seed,
+            allocation_mode=args.allocation_mode,
         )
 
     print('\n✓ All training done.')

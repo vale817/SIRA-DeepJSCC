@@ -22,9 +22,9 @@ import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 
 from sira.config import (
-    CHANNEL, LATENT_CH, CKPT_DIR, RESULT_DIR, CROP_SIZE,
+    CHANNEL, LATENT_CH, CKPT_DIR, RESULT_DIR, CROP_SIZE, ALLOCATION_MODE,
 )
-from sira.models import DeepJSCC, DEVICE, SIRA_METHODS
+from sira.models import DeepJSCC, DEVICE, SIRA_METHODS, load_compatible_state_dict
 
 
 PALETTE = {
@@ -54,7 +54,8 @@ def ckpt_path(method, channel=CHANNEL, latent_ch=LATENT_CH):
     return os.path.join(CKPT_DIR, f'{method}_{channel}_c{latent_ch}.pt')
 
 
-def load_sira(method='sira_b1_init', channel=CHANNEL, latent_ch=LATENT_CH):
+def load_sira(method='sira_b1_init', channel=CHANNEL, latent_ch=LATENT_CH,
+              allocation_mode=ALLOCATION_MODE):
     path = ckpt_path(method, channel, latent_ch)
     if method == 'sira_b1_init' and not os.path.isfile(path):
         legacy = ckpt_path('sira', channel, latent_ch)
@@ -63,8 +64,13 @@ def load_sira(method='sira_b1_init', channel=CHANNEL, latent_ch=LATENT_CH):
             method, path = 'sira', legacy
     if not os.path.isfile(path):
         raise FileNotFoundError(f'SIRA checkpoint not found: {path}')
-    net = DeepJSCC(method=method, latent_ch=latent_ch, channel=channel).to(DEVICE)
-    net.load_state_dict(torch.load(path, map_location=DEVICE))
+    net = DeepJSCC(
+        method=method, latent_ch=latent_ch, channel=channel,
+        allocation_mode=allocation_mode,
+    ).to(DEVICE)
+    _, _, skipped = load_compatible_state_dict(net, torch.load(path, map_location=DEVICE))
+    if skipped:
+        print(f'Compatible checkpoint load skipped {len(skipped)} keys.')
     net.eval()
     return net
 
@@ -141,9 +147,12 @@ def run_sira(net, x, snrs):
 
     for snr in snrs:
         x_hat = net(x, float(snr)).clamp(0, 1)
-        if not hasattr(net, '_last_sira') or 'power_map' not in net._last_sira:
-            raise RuntimeError('SIRA power_map was not produced. Is method="sira"?')
-        pm = net._last_sira['power_map'].detach().float()
+        if not hasattr(net, '_last_sira'):
+            raise RuntimeError('SIRA power map was not produced. Is method="sira"?')
+        pm = net._last_sira.get('power_map_spatial', net._last_sira.get('power_map'))
+        if pm is None:
+            raise RuntimeError('SIRA power map was not produced. Is method="sira"?')
+        pm = pm.detach().float()
         pm_up = F.interpolate(pm, size=x.shape[-2:], mode='bilinear', align_corners=False)
         recons.append(x_hat.cpu())
         raw_power_maps.append(pm_up.cpu())
@@ -246,6 +255,8 @@ def main():
     parser.add_argument('--method', default='sira_b1_init',
                         choices=list(SIRA_METHODS),
                         help='SIRA checkpoint variant to visualize')
+    parser.add_argument('--allocation_mode', default=ALLOCATION_MODE,
+                        choices=['hard', 'soft'])
     parser.add_argument('--snrs', nargs='+', type=float, default=[-2, 5, 15])
     parser.add_argument('--out', default=None)
     args = parser.parse_args()
@@ -260,7 +271,10 @@ def main():
     print(f'SNRs: {args.snrs}')
 
     x, _ = load_image_tensor(image_path, crop_size=CROP_SIZE)
-    net = load_sira(method=args.method, channel=args.channel, latent_ch=args.latent_ch)
+    net = load_sira(
+        method=args.method, channel=args.channel, latent_ch=args.latent_ch,
+        allocation_mode=args.allocation_mode,
+    )
     recons, power_maps, raw_power_maps = run_sira(net, x, args.snrs)
     plot_power_maps(x, recons, power_maps, raw_power_maps, args.snrs, image_path, out_path)
 

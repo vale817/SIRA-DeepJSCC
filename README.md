@@ -150,11 +150,30 @@ Then train frozen-backbone adapters:
 python -m scripts.train \
   --latent_ch 2 \
   --methods sira_b1_init sira_b2_init sira_b2_no_r \
+  --allocation_mode hard \
   --batch_size 16
 ```
 
 Existing checkpoints are skipped unless `--force` is passed. Best-validation
 checkpoints are saved as `.pt`; final-epoch checkpoints use `_final.pt`.
+`--allocation_mode hard` is the default KKT water-filling method. Use
+`--allocation_mode soft` for the low-SNR stabilized sqrt-risk blend. Training
+and evaluation must use the same allocation mode.
+
+Multi-seed validation trains and evaluates each seed in its own checkpoint and
+result directory, then writes mean/std summaries:
+
+```bash
+python -m scripts.run_multiseed \
+  --seeds 42 43 44 \
+  --latent_ch 2 \
+  --methods cnn semantic sira_b1_init sira_b2_init sira_b2_no_r \
+  --allocation_mode hard \
+  --importance_mode dino
+```
+
+For a quick wiring check before the full run, use `--importance_mode edge`,
+small epochs, and `--dry_run` first.
 
 ## Evaluation and Analysis
 

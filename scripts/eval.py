@@ -21,9 +21,13 @@ from sira import models
 from sira.config import (
     CHANNEL, LATENT_CH, SNR_SWEEP, CKPT_DIR, RESULT_DIR,
     METHOD_NAMES, METHOD_STYLE, CROP_SIZE, IMPORTANCE_MODE, SEED,
+    ALLOCATION_MODE,
 )
 from sira.datasets import get_div2k_loaders, get_kodak_loader
-from sira.models import DeepJSCC, semantic_importance, DEVICE, SIRA_METHODS
+from sira.models import (
+    DeepJSCC, semantic_importance, DEVICE, SIRA_METHODS,
+    load_compatible_state_dict,
+)
 
 
 # ── 指标函数 ──────────────────────────────────────────────────
@@ -67,15 +71,20 @@ def seed_evaluation(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-def load_net(method, channel=CHANNEL, latent_ch=LATENT_CH, input_size=CROP_SIZE):
+def load_net(method, channel=CHANNEL, latent_ch=LATENT_CH, input_size=CROP_SIZE,
+             allocation_mode=ALLOCATION_MODE):
     path = ckpt_path(method, channel, latent_ch)
     if not os.path.isfile(path):
         raise FileNotFoundError(f'Checkpoint not found: {path}')
     net = DeepJSCC(method=method, latent_ch=latent_ch,
-                   channel=channel, input_size=input_size).to(DEVICE)
-    net.load_state_dict(torch.load(
-        path, map_location=DEVICE
-    ))
+                   channel=channel, input_size=input_size,
+                   allocation_mode=allocation_mode).to(DEVICE)
+    _, _, skipped = load_compatible_state_dict(
+        net,
+        torch.load(path, map_location=DEVICE),
+    )
+    if skipped:
+        print(f'Compatible checkpoint load skipped {len(skipped)} keys.')
     net.eval()
     return net
 
@@ -201,7 +210,7 @@ def print_table(results_dict, snr_sweep, methods):
 # ── main ──────────────────────────────────────────────────────
 
 def main():
-    global RESULT_DIR
+    global CKPT_DIR, RESULT_DIR
     parser = argparse.ArgumentParser()
     parser.add_argument('--methods',    nargs='+',
                         default=['cnn','semantic','sira_b1_init','sira_b2_init'],
@@ -209,6 +218,7 @@ def main():
     parser.add_argument('--channel',    default=CHANNEL)
     parser.add_argument('--latent_ch',  type=int, default=LATENT_CH)
     parser.add_argument('--batch_size', type=int, default=8)
+    parser.add_argument('--ckpt_dir', default=CKPT_DIR)
     parser.add_argument('--result_dir', default=RESULT_DIR)
     parser.add_argument('--seed', type=int, default=SEED,
                         help='reset before each method for matched channel noise')
@@ -217,13 +227,19 @@ def main():
     parser.add_argument('--importance_mode', default=IMPORTANCE_MODE,
                         choices=['edge', 'dino'],
                         help='semantic importance backend used for ROI metrics')
+    parser.add_argument('--allocation_mode', default=ALLOCATION_MODE,
+                        choices=['hard', 'soft'])
     args = parser.parse_args()
 
+    CKPT_DIR = args.ckpt_dir
     RESULT_DIR = args.result_dir
     os.makedirs(RESULT_DIR, exist_ok=True)
     models.IMPORTANCE_MODE = args.importance_mode
     print(f'Device: {DEVICE}')
+    print(f'Checkpoint dir: {CKPT_DIR}')
+    print(f'Result dir: {RESULT_DIR}')
     print(f'Importance mode: {models.IMPORTANCE_MODE}')
+    print(f'Allocation mode: {args.allocation_mode}')
     lpips_fn = lpips_lib.LPIPS(net='alex').to(DEVICE)
     lpips_fn.eval()
     if models.IMPORTANCE_MODE == 'dino':
@@ -241,7 +257,10 @@ def main():
         div2k_results = {}
         for m in args.methods:
             print(f'\n── {METHOD_NAMES.get(m,m)} ──')
-            net = load_net(m, args.channel, args.latent_ch, input_size=CROP_SIZE)
+            net = load_net(
+                m, args.channel, args.latent_ch, input_size=CROP_SIZE,
+                allocation_mode=args.allocation_mode,
+            )
             seed_evaluation(args.seed)
             div2k_results[m] = evaluate_dataset(
                 net, val_loader, SNR_SWEEP, lpips_fn, tag=m
@@ -254,6 +273,7 @@ def main():
         fp = os.path.join(RESULT_DIR, f'div2k_{args.channel}_c{args.latent_ch}.json')
         with open(fp, 'w') as f:
             json.dump({'dataset': 'DIV2K_val',
+                       'allocation_mode': args.allocation_mode,
                        'evaluation_seed': args.seed,
                        'snr_sweep': SNR_SWEEP,
                        'methods': div2k_results}, f, indent=2)
@@ -273,7 +293,10 @@ def main():
             # DeepJSCC 是全卷积，传任何 input_size 都能跑；
             # 但 SemanticPriorMapper 的 latent_hw 需要和 encoder 输出一致
             # → 用 input_size=512（Kodak 短边）让 latent_hw 计算正确
-            net = load_net(m, args.channel, args.latent_ch, input_size=CROP_SIZE)
+            net = load_net(
+                m, args.channel, args.latent_ch, input_size=CROP_SIZE,
+                allocation_mode=args.allocation_mode,
+            )
             seed_evaluation(args.seed)
             kodak_results[m] = evaluate_dataset(
                 net, kodak_loader, SNR_SWEEP, lpips_fn, tag=m
@@ -286,6 +309,7 @@ def main():
         fp = os.path.join(RESULT_DIR, f'kodak_{args.channel}_c{args.latent_ch}.json')
         with open(fp, 'w') as f:
             json.dump({'dataset': 'Kodak-24',
+                       'allocation_mode': args.allocation_mode,
                        'evaluation_seed': args.seed,
                        'snr_sweep': SNR_SWEEP,
                        'methods': kodak_results}, f, indent=2)

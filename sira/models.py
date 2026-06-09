@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from .config import (
     IMPORTANCE_MODE, DINO_MODEL_NAME, DINO_INPUT_SIZE, DINO_TEMPERATURE,
     DINO_REC_ALPHA, DINO_M_LAMBDA, DINO_HUB_DIR, DINO_SOURCE,
-    DINO_REPO_OR_DIR, CROP_SIZE
+    DINO_REPO_OR_DIR, CROP_SIZE, ALLOCATION_MODE,
 )
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -225,8 +225,74 @@ def mean_normalize(x, dims, eps=1e-8):
 def hard_power_project(p, eps=1e-8):
     b = p.shape[0]
     n = p[0].numel()
-    denom = p.reshape(b, -1).sum(dim=1).view(b, 1, 1, 1)
+    denom = p.reshape(b, -1).sum(dim=1).view(b, *([1] * (p.dim() - 1)))
     return n * p / (denom + eps)
+
+
+def expand_to_latent_symbols(x, z):
+    b, c, h, w = z.shape
+    if x.shape[-2:] != (h, w):
+        x = F.interpolate(x, size=(h, w), mode='area')
+    if x.shape[1] == 1:
+        x = x.expand(b, c, h, w)
+    elif x.shape[1] != c:
+        x = x.mean(dim=1, keepdim=True).expand(b, c, h, w)
+    return x
+
+
+def water_filling_power(risk, gamma=None, eps=1e-8, iters=32):
+    """Closed-form SIRA prior: P_i=(sqrt(s_i/gamma)/mu - 1/gamma)^+."""
+    b = risk.shape[0]
+    flat = risk.clamp_min(eps).reshape(b, -1)
+    n = flat.shape[1]
+
+    if gamma is None:
+        return hard_power_project(torch.sqrt(risk.clamp_min(eps)), eps=eps)
+
+    gamma = gamma.view(b, 1).float().clamp_min(eps)
+    inv_gamma = 1.0 / gamma
+    gain = torch.sqrt(flat / gamma)
+    lo = torch.full((b, 1), eps, dtype=flat.dtype, device=flat.device)
+    hi = torch.sqrt(flat * gamma).max(dim=1, keepdim=True).values.clamp_min(eps)
+
+    for _ in range(iters):
+        mu = 0.5 * (lo + hi)
+        p = torch.relu(gain / mu - inv_gamma)
+        too_much = p.sum(dim=1, keepdim=True) > n
+        lo = torch.where(too_much, mu, lo)
+        hi = torch.where(too_much, hi, mu)
+
+    p = torch.relu(gain / hi.clamp_min(eps) - inv_gamma)
+    p = p.view_as(risk)
+    return hard_power_project(p + eps, eps=eps)
+
+
+def stabilized_water_filling_power(risk, gamma=None, pivot_snr_db=2.0, eps=1e-8):
+    """Blend hard water-filling with sqrt-risk allocation at low SNR."""
+    p_sqrt_risk = hard_power_project(torch.sqrt(risk.clamp_min(eps)), eps=eps)
+    p_waterfill = water_filling_power(risk, gamma=gamma, eps=eps)
+    b = risk.shape[0]
+
+    if gamma is None:
+        blend_lambda = torch.ones(b, 1, 1, 1, device=risk.device, dtype=risk.dtype)
+    else:
+        gamma = gamma.view(b, 1, 1, 1).float().clamp_min(eps)
+        pivot_gamma = 10.0 ** (pivot_snr_db / 10.0)
+        blend_lambda = (pivot_gamma / (gamma + pivot_gamma)).to(risk.dtype)
+
+    p_stabilized = hard_power_project(
+        (1.0 - blend_lambda) * p_waterfill + blend_lambda * p_sqrt_risk,
+        eps=eps,
+    )
+    return p_stabilized, p_waterfill, p_sqrt_risk, blend_lambda
+
+
+def effective_power_from_transmit(z_alloc, power_symbol, eps=1e-8):
+    b = z_alloc.shape[0]
+    n = z_alloc[0].numel()
+    energy = z_alloc.reshape(b, -1).pow(2).sum(dim=1).view(b, 1, 1, 1)
+    alpha = n / (energy + eps)
+    return alpha * power_symbol, alpha
 
 
 class ConvBlock(nn.Module):
@@ -277,7 +343,7 @@ class SemanticPriorMapper(nn.Module):
 
 
 class ChannelReliabilityMapper(nn.Module):
-    """R: SNR dB → embedding + temperature scalar"""
+    """R: SNR dB -> embedding, linear gamma, and concentration temperature."""
     def __init__(self, embed_dim=8):
         super().__init__()
         self.net = nn.Sequential(
@@ -290,37 +356,78 @@ class ChannelReliabilityMapper(nn.Module):
         )
 
     def forward(self, snr):
-        s     = snr.view(snr.shape[0], 1) / 20.0
-        embed = self.net(s)
-        tau   = self.temp_head(embed).squeeze(-1) + 0.5
-        return embed, tau
+        snr = snr.view(snr.shape[0], 1).float()
+        gamma = torch.pow(10.0, snr / 10.0).squeeze(-1)
+        embed = self.net(snr / 20.0)
+        tau = self.temp_head(embed).squeeze(-1) + 0.5
+        return embed, gamma, tau
 
 
 class ProtectionAdapter(nn.Module):
-    """A: semantic risk + optional channel embedding → constrained power map"""
-    def __init__(self, r_dim=8, hidden=32):
+    """A: semantic risk + channel state -> constrained symbol-level power."""
+    def __init__(self, latent_ch, r_dim=8, hidden=32,
+                 allocation_mode=ALLOCATION_MODE):
         super().__init__()
+        if allocation_mode not in ('hard', 'soft'):
+            raise ValueError(f'Unknown allocation_mode: {allocation_mode}')
+        self.latent_ch = latent_ch
+        self.allocation_mode = allocation_mode
         self.net = nn.Sequential(
-            nn.Conv2d(1 + r_dim, hidden, 3, 1, 1), nn.PReLU(),
+            nn.Conv2d(2 * latent_ch + r_dim, hidden, 3, 1, 1), nn.PReLU(),
             nn.Conv2d(hidden,    hidden, 3, 1, 1), nn.PReLU(),
-            nn.Conv2d(hidden,    1,      1),
+            nn.Conv2d(hidden,    latent_ch, 1),
         )
+        self.residual_mix_logit = nn.Parameter(torch.tensor(-3.0))
 
-    def forward(self, z, semantic_risk, r_embed=None, tau=None):
+    def forward(self, z, semantic_importance, vulnerability=None,
+                r_embed=None, gamma=None, tau=None):
         b, c, h, w = z.shape
-        s     = F.interpolate(semantic_risk, size=(h,w), mode='area')
-        s     = mean_normalize(s, dims=(1,2,3))
-        adapter_input = s
+        m = expand_to_latent_symbols(semantic_importance, z)
+        m = mean_normalize(m.clamp_min(1e-8), dims=(1,2,3))
+
+        if vulnerability is None:
+            v = torch.ones_like(m)
+        else:
+            v = expand_to_latent_symbols(vulnerability.detach(), z)
+            v = mean_normalize(v.clamp_min(1e-8), dims=(1,2,3))
+
+        risk = mean_normalize((m * v).clamp_min(1e-8), dims=(1,2,3))
+        p_soft, p_waterfill, p_sqrt_risk, soft_blend_lambda = (
+            stabilized_water_filling_power(risk, gamma=gamma)
+        )
+        if self.allocation_mode == 'soft':
+            p_prior = p_soft
+            blend_lambda = soft_blend_lambda
+        else:
+            p_prior = p_waterfill
+            blend_lambda = torch.zeros_like(soft_blend_lambda)
+
+        adapter_risk = risk
+        if tau is not None:
+            tau_ = tau.view(b, 1, 1, 1).float().clamp(0.25, 4.0)
+            adapter_risk = mean_normalize(
+                risk.float().clamp_min(1e-8) ** tau_,
+                dims=(1,2,3),
+            ).to(risk.dtype)
+
+        adapter_input = torch.cat([adapter_risk, p_prior.detach()], dim=1)
         if r_embed is not None:
             r = r_embed.view(b, -1, 1, 1).expand(b, -1, h, w)
-            adapter_input = torch.cat([s, r], dim=1)
-        raw_p = F.softplus(self.net(adapter_input)) + 1e-6
-        if tau is not None:
-            tau_  = tau.view(b, 1, 1, 1)
-            raw_p = raw_p.float() ** tau_.float()   # 避免 AMP 下溢
-        p_spatial = hard_power_project(raw_p)
-        z_out = torch.sqrt(p_spatial.expand_as(z) + 1e-8) * z
-        return z_out, p_spatial
+            adapter_input = torch.cat([adapter_input, r], dim=1)
+
+        p_residual = hard_power_project(F.softplus(self.net(adapter_input)) + 1e-6)
+        mix = torch.sigmoid(self.residual_mix_logit)
+        p_symbol = hard_power_project((1.0 - mix) * p_prior + mix * p_residual)
+        z_out = torch.sqrt(p_symbol + 1e-8) * z
+        allocation = {
+            'power_prior': p_prior,
+            'power_waterfill': p_waterfill,
+            'power_sqrt_risk': p_sqrt_risk,
+            'low_snr_blend_lambda': blend_lambda,
+            'residual_mix': mix,
+            'allocation_mode': self.allocation_mode,
+        }
+        return z_out, p_symbol, risk, allocation
 
 
 # ── DeepJSCC 主模型 ───────────────────────────────────────────
@@ -329,12 +436,27 @@ SIRA_NO_R_METHODS = ('sira_b2_no_r',)
 SIRA_METHODS = ('sira', 'sira_b1_init', 'sira_b2_init') + SIRA_NO_R_METHODS
 SEMANTIC_LOSS_METHODS = ('semantic',) + SIRA_METHODS
 
+
+def load_compatible_state_dict(model, state_dict):
+    model_state = model.state_dict()
+    compatible = {
+        k: v for k, v in state_dict.items()
+        if k in model_state and tuple(model_state[k].shape) == tuple(v.shape)
+    }
+    skipped = sorted(k for k in state_dict if k not in compatible)
+    missing, unexpected = model.load_state_dict(compatible, strict=False)
+    return missing, unexpected, skipped
+
+
 class DeepJSCC(nn.Module):
     def __init__(self, method='cnn', latent_ch=4, channel='awgn',
-                 input_size=CROP_SIZE):
+                 input_size=CROP_SIZE, allocation_mode=ALLOCATION_MODE):
         super().__init__()
+        if allocation_mode not in ('hard', 'soft'):
+            raise ValueError(f'Unknown allocation_mode: {allocation_mode}')
         assert method in ('cnn', 'semantic') + SIRA_METHODS
         self.method = method
+        self.allocation_mode = allocation_mode
         self.encoder = Encoder(latent_ch)
         self.decoder = Decoder(latent_ch)
         self.channel = Channel(channel)
@@ -344,11 +466,22 @@ class DeepJSCC(nn.Module):
 
         if method in SIRA_METHODS:
             self.M = SemanticPriorMapper(latent_hw=latent_hw)
+            self.register_buffer(
+                'vulnerability_ema',
+                torch.ones(1, latent_ch, latent_hw[0], latent_hw[1]),
+            )
+            self.vulnerability_momentum = 0.95
             if method in SIRA_NO_R_METHODS:
-                self.A = ProtectionAdapter(r_dim=0)
+                self.A = ProtectionAdapter(
+                    latent_ch=latent_ch, r_dim=0,
+                    allocation_mode=allocation_mode,
+                )
             else:
                 self.R = ChannelReliabilityMapper(embed_dim=8)
-                self.A = ProtectionAdapter(r_dim=8)
+                self.A = ProtectionAdapter(
+                    latent_ch=latent_ch, r_dim=8,
+                    allocation_mode=allocation_mode,
+                )
             for p in self.encoder.parameters():
                 p.requires_grad = False
             for p in self.decoder.parameters():
@@ -359,6 +492,43 @@ class DeepJSCC(nn.Module):
             snr_db = torch.full((x.shape[0],), float(snr_db), device=x.device)
         return snr_db.view(-1, 1, 1, 1).float().to(x.device)
 
+    def _resize_vulnerability_ema(self, z):
+        v = self.vulnerability_ema.to(device=z.device, dtype=z.dtype)
+        if v.shape[-2:] != z.shape[-2:]:
+            v = F.interpolate(v, size=z.shape[-2:], mode='area')
+        return v.expand(z.shape[0], -1, -1, -1)
+
+    def _decoder_vulnerability(self, z, x):
+        if not self.training or not torch.is_grad_enabled():
+            return self._resize_vulnerability_ema(z)
+
+        with torch.enable_grad():
+            z_probe = z.detach().float().requires_grad_(True)
+            x_probe = x.detach().float()
+            recon = self.decoder(z_probe)
+            probe_loss = F.mse_loss(recon, x_probe)
+            grad = torch.autograd.grad(
+                probe_loss,
+                z_probe,
+                retain_graph=False,
+                create_graph=False,
+            )[0]
+
+        v = mean_normalize(grad.detach().abs().clamp_min(1e-8), dims=(1,2,3))
+        with torch.no_grad():
+            v_mean = v.mean(dim=0, keepdim=True)
+            if v_mean.shape[-2:] != self.vulnerability_ema.shape[-2:]:
+                v_mean = F.interpolate(
+                    v_mean,
+                    size=self.vulnerability_ema.shape[-2:],
+                    mode='area',
+                )
+            self.vulnerability_ema.mul_(self.vulnerability_momentum).add_(
+                v_mean.to(self.vulnerability_ema.device),
+                alpha=1.0 - self.vulnerability_momentum,
+            )
+        return v.to(dtype=z.dtype)
+
     def forward(self, x, snr_db):
         snr = self._snr_tensor(x, snr_db)
         z   = self.encoder(x)
@@ -366,12 +536,34 @@ class DeepJSCC(nn.Module):
 
         if self.method in SIRA_METHODS:
             m, m_pix = self.M(x)
+            v = self._decoder_vulnerability(z, x)
             if self.method in SIRA_NO_R_METHODS:
-                z, power_map = self.A(z, m)
+                z, power_symbol, risk, allocation = self.A(z, m, vulnerability=v)
             else:
-                r_embed, tau = self.R(snr.view(-1))
-                z, power_map = self.A(z, m, r_embed, tau)
-            self._last_sira = {'m': m, 'm_pix': m_pix, 'power_map': power_map}
+                r_embed, gamma, tau = self.R(snr.view(-1))
+                z, power_symbol, risk, allocation = self.A(
+                    z, m, vulnerability=v, r_embed=r_embed,
+                    gamma=gamma, tau=tau,
+                )
+            effective_power_symbol, power_alpha = effective_power_from_transmit(
+                z, power_symbol,
+            )
+            z = power_normalize(z)
+            power_map = power_symbol.mean(dim=1, keepdim=True)
+            effective_power_map = effective_power_symbol.mean(dim=1, keepdim=True)
+            self._last_sira = {
+                'm': m,
+                'm_pix': m_pix,
+                'vulnerability': v,
+                'semantic_risk': risk,
+                'power_symbol': power_symbol,
+                'effective_power_symbol': effective_power_symbol,
+                'power_alpha': power_alpha,
+                'power_map_spatial': power_map,
+                'effective_power_map_spatial': effective_power_map,
+                'power_map': power_map,
+                **allocation,
+            }
 
         y = self.channel(z, snr)
         return self.decoder(y)

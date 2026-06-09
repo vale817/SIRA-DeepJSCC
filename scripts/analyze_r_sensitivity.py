@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from sira.config import CHANNEL, LATENT_CH, RESULT_DIR
+from sira.config import CHANNEL, LATENT_CH, RESULT_DIR, ALLOCATION_MODE
 from sira.models import DEVICE, SIRA_NO_R_METHODS, power_normalize
 from scripts.visualize_power_map import list_images, load_image_tensor, load_sira
 
@@ -51,12 +51,14 @@ def extract_power_map(net, x, snr):
     m, _ = net.M(x)
 
     if net.method in SIRA_NO_R_METHODS:
-        z, power_map = net.A(z, m)
+        z, power_symbol, _, _ = net.A(z, m)
+        power_map = power_symbol.mean(dim=1, keepdim=True)
         return power_map.detach().float().cpu(), None, None
 
     snr_tensor = torch.full((x.shape[0],), float(snr), device=DEVICE)
-    r_embed, tau = net.R(snr_tensor)
-    z, power_map = net.A(z, m, r_embed, tau)
+    r_embed, gamma, tau = net.R(snr_tensor)
+    z, power_symbol, _, _ = net.A(z, m, r_embed=r_embed, gamma=gamma, tau=tau)
+    power_map = power_symbol.mean(dim=1, keepdim=True)
     return (
         power_map.detach().float().cpu(),
         r_embed.detach().float().cpu(),
@@ -175,6 +177,8 @@ def main():
     parser.add_argument('--snrs', nargs='+', type=float, default=[-2, 0, 2, 5, 10, 15])
     parser.add_argument('--reference_snr', type=float, default=-2)
     parser.add_argument('--result_dir', default=RESULT_DIR)
+    parser.add_argument('--allocation_mode', default=ALLOCATION_MODE,
+                        choices=['hard', 'soft'])
     args = parser.parse_args()
 
     if args.reference_snr not in args.snrs:
@@ -188,7 +192,10 @@ def main():
     r_outputs = {}
     for method in args.methods:
         print(f'Analyzing {method}...')
-        net = load_sira(method, args.channel, args.latent_ch)
+        net = load_sira(
+            method, args.channel, args.latent_ch,
+            allocation_mode=args.allocation_mode,
+        )
         for image_path in paths:
             x, _ = load_image_tensor(image_path)
             outputs = {

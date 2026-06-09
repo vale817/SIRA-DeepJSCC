@@ -23,9 +23,11 @@ from tqdm import tqdm
 
 from sira.config import (
     CHANNEL, LATENT_CH, SNR_SWEEP, CKPT_DIR, RESULT_DIR,
-    METHOD_NAMES, METHOD_STYLE, CROP_SIZE, SEED,
+    METHOD_NAMES, METHOD_STYLE, CROP_SIZE, SEED, ALLOCATION_MODE,
 )
-from sira.models import DeepJSCC, DEVICE, SIRA_METHODS
+from sira.models import (
+    DeepJSCC, DEVICE, SIRA_METHODS, load_compatible_state_dict,
+)
 
 
 def batch_psnr(x_hat, x):
@@ -69,7 +71,8 @@ def seed_evaluation(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-def load_net(method, channel=CHANNEL, latent_ch=LATENT_CH, input_size=CROP_SIZE):
+def load_net(method, channel=CHANNEL, latent_ch=LATENT_CH, input_size=CROP_SIZE,
+             allocation_mode=ALLOCATION_MODE):
     path = ckpt_path(method, channel, latent_ch)
     if not os.path.isfile(path):
         raise FileNotFoundError(f'Checkpoint not found: {path}')
@@ -78,10 +81,14 @@ def load_net(method, channel=CHANNEL, latent_ch=LATENT_CH, input_size=CROP_SIZE)
         latent_ch=latent_ch,
         channel=channel,
         input_size=input_size,
+        allocation_mode=allocation_mode,
     ).to(DEVICE)
-    net.load_state_dict(torch.load(
-        path, map_location=DEVICE
-    ))
+    _, _, skipped = load_compatible_state_dict(
+        net,
+        torch.load(path, map_location=DEVICE),
+    )
+    if skipped:
+        print(f'Compatible checkpoint load skipped {len(skipped)} keys.')
     net.eval()
     return net
 
@@ -315,7 +322,7 @@ def print_table(results_dict, snr_sweep, methods):
 
 
 def main():
-    global RESULT_DIR
+    global CKPT_DIR, RESULT_DIR
     parser = argparse.ArgumentParser()
     parser.add_argument('--coco_root', default='data/coco')
     parser.add_argument('--methods', nargs='+',
@@ -326,16 +333,23 @@ def main():
     parser.add_argument('--max_images', type=int, default=None,
                         help='optional quick-test limit, e.g. 500')
     parser.add_argument('--num_workers', type=int, default=2)
+    parser.add_argument('--ckpt_dir', default=CKPT_DIR)
     parser.add_argument('--result_dir', default=RESULT_DIR)
     parser.add_argument('--seed', type=int, default=SEED,
                         help='reset before each method for matched channel noise')
+    parser.add_argument('--allocation_mode', default=ALLOCATION_MODE,
+                        choices=['hard', 'soft'])
     parser.add_argument('--categories', nargs='*', default=None,
                         help='optional COCO category names, e.g. person car bus')
     args = parser.parse_args()
 
+    CKPT_DIR = args.ckpt_dir
     RESULT_DIR = args.result_dir
     os.makedirs(RESULT_DIR, exist_ok=True)
     print(f'Device: {DEVICE}')
+    print(f'Checkpoint dir: {CKPT_DIR}')
+    print(f'Result dir: {RESULT_DIR}')
+    print(f'Allocation mode: {args.allocation_mode}')
     print(f'COCO root: {args.coco_root}')
     print('ROI source: COCO bounding boxes')
 
@@ -359,7 +373,10 @@ def main():
     coco_results = {}
     for m in args.methods:
         print(f'\n-- {METHOD_NAMES.get(m, m)} --')
-        net = load_net(m, args.channel, args.latent_ch, input_size=CROP_SIZE)
+        net = load_net(
+            m, args.channel, args.latent_ch, input_size=CROP_SIZE,
+            allocation_mode=args.allocation_mode,
+        )
         seed_evaluation(args.seed)
         coco_results[m] = evaluate_dataset(
             net, loader, SNR_SWEEP, lpips_fn, tag=m
@@ -377,6 +394,7 @@ def main():
         json.dump({
             'dataset': 'COCO_val2017',
             'roi_source': 'bbox',
+            'allocation_mode': args.allocation_mode,
             'evaluation_seed': args.seed,
             'snr_sweep': SNR_SWEEP,
             'methods': coco_results,

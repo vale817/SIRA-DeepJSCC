@@ -21,6 +21,7 @@ LR             = 1e-3
 CROP_SIZE      = 256             # 训练时随机 crop 的尺寸
 TRAIN_SNR_RANGE = (-2.0, 15.0)
 SNR_SWEEP      = [-2, 0, 2, 5, 10, 15]
+ALLOCATION_MODE = os.getenv('SIRA_ALLOCATION_MODE', 'hard').lower()
 
 # ── DINOv2 ────────────────────────────────────────────────────
 # AutoDL/Colab 上首次加载 DINOv2 会下载 torch hub repo + checkpoint。

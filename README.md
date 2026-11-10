@@ -1,14 +1,12 @@
 # SIRA: Semantic-Informed Reliability Adaptation for DeepJSCC
 
-SIRA is a parameter-efficient adapter for semantic-aware image transmission over
-noisy channels. It freezes a pretrained DeepJSCC encoder/decoder and learns a
-spatial power-allocation policy from image semantics and channel conditions.
+SIRA is a transmitter-side power-allocation adapter for pretrained DeepJSCC.
+It uses image semantics, decoder sensitivity, and channel SNR to reweight latent
+symbols under the same transmit-power budget as the baseline. The adapter is
+trained for a pretrained backbone while the encoder and decoder stay frozen.
+At deployment, the original receiver decodes the received symbols directly.
 
-This repository is also an empirical study of when semantic protection helps,
-when it saturates, and which parts of an adaptive communication module actually
-contribute.
-
-![Low-SNR gains](results/low_snr_awgn_c2_gains_pub.png)
+[Three-seed results](results/README.md) · [Experiment summary](docs/PROJECT_STATUS.md) · [Kodak reconstruction example](results/qualitative/README.md)
 
 ## What SIRA Does
 
@@ -22,10 +20,13 @@ SNR ----------------> R: reliability ---+-> A: protection adapter
 - **M, Semantic Prior Mapper:** predicts spatial importance from the input image.
 - **R, Channel Reliability Mapper:** maps SNR to a reliability embedding and a
   power-allocation temperature.
-- **A, Protection Adapter:** combines semantic and reliability information to
-  produce a normalized spatial power map.
+- **A, Protection Adapter:** forms a symbol-level risk score from semantic
+  importance and decoder sensitivity, then blends a water-filling prior with
+  a learned convolutional correction. The scaled symbols are normalized again
+  immediately before transmission.
 
-The encoder and decoder remain frozen for all SIRA variants.
+DINOv2 provides semantic supervision during training. Inference uses the learned
+semantic mapper and a cached moving average of gradient-based sensitivity.
 
 ## Implemented Methods
 
@@ -40,36 +41,45 @@ The encoder and decoder remain frozen for all SIRA variants.
 
 ## Main Findings
 
-- Semantic protection is most useful under constrained bandwidth (`c=2`) and
-  low SNR; gains largely shrink when bandwidth is less constrained (`c=4`).
-- The adapter depends on the representation quality of the frozen backbone.
-  This repository therefore supports **backbone compatibility**, not a strong
-  architecture-agnostic claim.
-- Reusing DINOv2 semantics in both the semantic backbone and M leaves limited
-  marginal improvement, suggesting diminishing returns from already-captured
-  semantic information.
-- Removing R produces nearly identical reconstruction quality. Sensitivity
-  analysis shows that R changes the power-map pattern, but the allocation
-  magnitude remains weak and does not consistently concentrate more power under
-  poor channel conditions.
+The table shows the three-seed mean ROI PSNR difference for SIRA-B2 at `c=1`
+with hard water-filling, averaged over all six AWGN SNRs. B2 is the
+semantic-weighted backbone used to initialize SIRA-B2.
 
-These are empirical findings from the included experimental setup, not claims
-of universal behavior.
+| Dataset | ROI | vs. CNN-DeepJSCC | vs. B2 |
+|---|---|---:|---:|
+| [Kodak-24](results/experiments/exp3_hard_c1/summary_kodak_awgn_c1.json) | DINOv2 semantic ROI | +0.263 dB | −0.003 dB |
+| [COCO val2017](results/experiments/exp3_hard_c1/summary_coco_awgn_c1.json) | Annotated object boxes | +0.101 dB | −0.002 dB |
+
+Low-SNR protection motivated the design. In the `c=2` hard water-filling run,
+SIRA-B2's mean ROI PSNR relative to B2 over −2, 0, and 2 dB was +0.026 dB on
+[DIV2K](results/experiments/exp1_hard_c2/summary_div2k_awgn_c2.json) and −0.043 dB
+on [Kodak-24](results/experiments/exp1_hard_c2/summary_kodak_awgn_c2.json). At
+−2 dB on Kodak, full SIRA-B2 also trailed the version without R across all
+three seeds. These comparisons show that the effect of explicit SNR conditioning
+varies with the dataset and operating point.
+
+### Why inspect local detail?
+
+![Kodak image 03 showing the original, B1 reconstructions, enlarged lettering, and local error maps](results/qualitative/kodim03_b1_awgn_c2.webp)
+
+In a [supplemental B1 run](results/qualitative/README.md), Kodak image 03 reached
+28.73 dB full-image PSNR at 5 dB SNR while the embroidered lettering remained
+blurred. The figure illustrates local detail loss in the baseline.
 
 ## Evaluation
 
 Experiments cover:
 
-- **DIV2K validation:** in-domain reconstruction.
+- **DIV2K:** in-domain reconstruction. The archived `c=1` run has a [split caveat](docs/EXP3_HARD_WATERFILL_C1.md#23-datasets-and-metrics).
 - **Kodak-24:** zero-shot image-domain generalization.
 - **COCO val2017:** object-ROI reconstruction using ground-truth bounding boxes.
 - **AWGN channels:** SNR sweep `[-2, 0, 2, 5, 10, 15]` dB.
 - **Metrics:** PSNR, SSIM, LPIPS, semantic ROI PSNR, and COCO object-ROI PSNR.
 
-The tracked `results/` files contain representative exploratory runs. DeepJSCC
-evaluation samples channel noise during inference. The evaluation scripts reset
-the same seed before each method for matched-noise comparisons; serious
-comparisons should still report repeated seeds with confidence intervals.
+The [results index](results/README.md) separates the three-seed experiments
+from historical single runs. DeepJSCC evaluation samples channel noise during
+inference. The evaluation scripts reset the seed before each method for
+matched-noise comparisons.
 
 Training also resets the random state after model and DINOv2 initialization so
 adapter variants receive matched data order, sampled SNRs, and channel-noise
@@ -138,13 +148,13 @@ DINOv2 experiments.
 
 ## Training
 
-Train the two backbones first:
+To reproduce the backbone runs from scratch:
 
 ```bash
 python -m scripts.train --latent_ch 2 --methods cnn semantic
 ```
 
-Then train frozen-backbone adapters:
+With compatible pretrained checkpoints, train the adapters:
 
 ```bash
 python -m scripts.train \
@@ -250,18 +260,19 @@ SIRA-DeepJSCC/
 
 More detailed experiment notes are in
 [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md),
+[docs/EXP3_HARD_WATERFILL_C1.md](docs/EXP3_HARD_WATERFILL_C1.md),
 [docs/SIRA_INIT_EXPERIMENT.md](docs/SIRA_INIT_EXPERIMENT.md), and
 [docs/SIRA_NO_R_ABLATION.md](docs/SIRA_NO_R_ABLATION.md).
 
 ## Limitations
 
-- Results currently use a single compact CNN DeepJSCC architecture.
-- B1 and B2 share the same architecture, so initialization experiments do not
-  establish architecture-level backbone agnosticism.
-- The semantic backbone and SIRA semantic mapper both use DINOv2, which may
-  reduce marginal adapter gains.
-- R responds to SNR but does not yet provide stable reconstruction gains.
-- Current tracked results are exploratory single-run measurements.
+- B1 and B2 are two sets of weights for the same CNN architecture. Each adapter
+  is trained against its corresponding backbone.
+- The independent contribution of decoder sensitivity remains open. A matched
+  comparison of semantic importance alone, sensitivity alone, and their product
+  would isolate the input to the risk score.
+- The results report variability across three seeds. End-device latency and
+  memory overhead remain unmeasured.
 
 ## Citation
 

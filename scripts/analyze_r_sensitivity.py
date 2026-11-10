@@ -49,15 +49,17 @@ def extract_power_map(net, x, snr):
     x = x.to(DEVICE)
     z = power_normalize(net.encoder(x))
     m, _ = net.M(x)
+    v = net._decoder_vulnerability(z, x)
 
     if net.method in SIRA_NO_R_METHODS:
-        z, power_symbol, _, _ = net.A(z, m)
+        _, power_symbol, _, _ = net.A(z, m, vulnerability=v)
         power_map = power_symbol.mean(dim=1, keepdim=True)
         return power_map.detach().float().cpu(), None, None
 
-    snr_tensor = torch.full((x.shape[0],), float(snr), device=DEVICE)
-    r_embed, gamma, tau = net.R(snr_tensor)
-    z, power_symbol, _, _ = net.A(z, m, r_embed=r_embed, gamma=gamma, tau=tau)
+    r_embed, gamma, tau = net.R(net._snr_tensor(x, snr).view(-1))
+    _, power_symbol, _, _ = net.A(
+        z, m, vulnerability=v, r_embed=r_embed, gamma=gamma, tau=tau,
+    )
     power_map = power_symbol.mean(dim=1, keepdim=True)
     return (
         power_map.detach().float().cpu(),

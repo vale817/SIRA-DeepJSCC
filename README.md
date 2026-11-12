@@ -129,16 +129,6 @@ main comparison.
 - [Training details](docs/SIRA_INIT_EXPERIMENT.md)
 - [Results and archive](results/README.md)
 
-## Limitations
-
-- Both models use the same compact CNN architecture.
-- The comparison measures the combined effect of semantic training and power
-  adaptation. Semantic training appears to account for much of the observed
-  ROI improvement. Both stages use DINOv2-derived importance, which may leave
-  limited room for the adapter to add complementary information.
-- The comparison covers two test datasets and three seeds at the displayed
-  bandwidth setting.
-
 ## Citation
 
 A preprint is in preparation. Citation information will be added when available.

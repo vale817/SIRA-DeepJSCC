@@ -1,12 +1,24 @@
 # SIRA: Semantic-Informed Reliability Adaptation for DeepJSCC
 
-SIRA is a parameter-efficient adapter for semantic-aware image transmission over
-noisy channels. It freezes a pretrained DeepJSCC encoder/decoder and learns a
-spatial power-allocation policy from image semantics and channel conditions.
+SIRA is a two-stage framework for semantic-aware image transmission over noisy
+channels. It trains a DeepJSCC backbone with DINOv2-weighted reconstruction,
+then freezes the encoder and decoder and trains a lightweight transmit power
+adapter conditioned on image semantics and SNR.
 
 This repository is also an empirical study of when semantic protection helps,
 when it saturates, and which parts of an adaptive communication module actually
 contribute.
+
+## Main Result
+
+![ROI PSNR across six SNR levels at c=1. SIRA is above CNN-DeepJSCC on Kodak-24 and COCO object regions. Lower panels show the paired gains.](results/sira_main_roi_c1.png)
+
+With one latent channel (`c=1`), AWGN and hard water-filling, SIRA improves
+mean ROI PSNR over CNN-DeepJSCC by **0.263 dB on Kodak-24 semantic regions**
+and **0.101 dB on COCO val2017 object regions**, averaged over six SNR levels
+and three seeds (42–44). The figure shows mean ± standard deviation across seeds.
+
+[Per-seed data](results/sira_main_roi_c1.csv) · [Plotting script](scripts/plot_main_roi.py)
 
 ## What SIRA Does
 
@@ -55,13 +67,14 @@ of universal behavior.
 
 Experiments cover:
 
-- **DIV2K validation:** in-domain reconstruction.
+- **DIV2K:** in-domain reconstruction. The `c=1` run used the training split.
 - **Kodak-24:** zero-shot image-domain generalization.
 - **COCO val2017:** object-ROI reconstruction using ground-truth bounding boxes.
 - **AWGN channels:** SNR sweep `[-2, 0, 2, 5, 10, 15]` dB.
 - **Metrics:** PSNR, SSIM, LPIPS, semantic ROI PSNR, and COCO object-ROI PSNR.
 
-The tracked `results/` files contain representative exploratory runs. DeepJSCC
+The tracked `results/` files include the three-seed ROI comparison above and
+historical exploratory runs. DeepJSCC
 evaluation samples channel noise during inference. The evaluation scripts reset
 the same seed before each method for matched-noise comparisons; serious
 comparisons should still report repeated seeds with confidence intervals.
@@ -256,7 +269,6 @@ More detailed experiment notes are in
 - The adapter can offer limited additional gains after semantic-weighted
   training, possibly because both stages use DINOv2-derived importance.
 - R responds to SNR but does not yet provide stable reconstruction gains.
-- Current tracked results are exploratory single-run measurements.
 
 ## Citation
 

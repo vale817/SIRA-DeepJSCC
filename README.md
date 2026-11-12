@@ -13,10 +13,10 @@ contribute.
 
 ![ROI PSNR across six SNR levels at c=1. SIRA is above CNN-DeepJSCC on Kodak-24 and COCO object regions. Lower panels show the paired gains.](results/sira_main_roi_c1.png)
 
-With one latent channel (`c=1`), AWGN and hard water-filling, SIRA improves
-mean ROI PSNR over CNN-DeepJSCC by **0.263 dB on Kodak-24 semantic regions**
-and **0.101 dB on COCO val2017 object regions**, averaged over six SNR levels
-and three seeds (42–44). The figure shows mean ± standard deviation across seeds.
+With one latent channel (`c=1`), AWGN and hard water-filling, SIRA has higher
+mean ROI PSNR on Kodak-24 semantic regions and COCO val2017 object regions at
+all six evaluated SNRs. Curves and paired differences show mean ± standard
+deviation across three seeds (42–44).
 
 [Per-seed data](results/sira_main_roi_c1.csv) · [Plotting script](scripts/plot_main_roi.py)
 

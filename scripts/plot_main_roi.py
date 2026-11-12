@@ -42,15 +42,15 @@ def load_roi_measurements(path):
 def main():
     measurements = load_roi_measurements(RESULTS / f'{STEM}.csv')
     fig, axes = plt.subplots(
-        2, 2, figsize=(9.2, 5.5), sharex=True, sharey='row',
-        gridspec_kw={'height_ratios': [2.2, 1]},
+        2, 2, figsize=(11.5, 5.5), sharex=True, sharey='row',
+        gridspec_kw={'height_ratios': [1.8, 1]},
     )
     fig.patch.set_facecolor('white')
-    fig.subplots_adjust(left=0.105, right=0.97, top=0.74, bottom=0.15,
+    fig.subplots_adjust(left=0.09, right=0.97, top=0.74, bottom=0.15,
                         hspace=0.16, wspace=0.17)
-    fig.text(0.105, 0.95, 'ROI reconstruction at c = 1',
+    fig.text(0.09, 0.95, 'ROI reconstruction at c = 1',
              fontsize=19, weight='bold', color='#182236')
-    fig.text(0.105, 0.902, 'AWGN · Hard water-filling · 3 seeds',
+    fig.text(0.09, 0.902, 'AWGN · Hard water-filling · 3 seeds',
              fontsize=10.5, color='#4F5D75')
 
     for col, (dataset, (title, roi)) in enumerate(DATASETS.items()):
@@ -75,10 +75,6 @@ def main():
         bottom.errorbar(SNRS, gains, yerr=[pstdev(values) for values in differences],
                         fmt='D-', color='#007B70', markersize=4, linewidth=1.3,
                         elinewidth=0.9, capsize=2)
-        top.text(0.05, 0.88, f'Mean gain {mean(gains):+.3f} dB',
-                 transform=top.transAxes, color='#00665D', fontsize=10,
-                 weight='semibold')
-
         for axis in (top, bottom):
             axis.set_axisbelow(True)
             axis.grid(axis='y', color='#E2E7ED', linewidth=0.7)
@@ -97,7 +93,7 @@ def main():
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, frameon=False, ncols=2, loc='upper right',
                bbox_to_anchor=(0.978, 0.967), fontsize=10)
-    fig.text(0.105, 0.048,
+    fig.text(0.09, 0.048,
              'Mean ± SD across seeds. Bottom panels show paired differences (SIRA − CNN-DeepJSCC).',
              fontsize=9, color='#4F5D75')
 

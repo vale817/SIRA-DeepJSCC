@@ -22,14 +22,62 @@ and paired differences show mean ± standard deviation across seeds 42–44.
 
 ## How SIRA-DeepJSCC Works
 
-1. **Semantic training.** DINOv2-derived importance weights the reconstruction
-   loss used to train the encoder and decoder.
-2. **Power adaptation.** Freeze the encoder and decoder and train the
-   approximately 500,000 parameters of the transmit power adapter. A small CNN
-   predicts semantic importance, and reconstruction gradients estimate decoder
-   sensitivity. Their product defines risk at each latent symbol. The adapter
-   combines SNR-conditioned KKT water-filling with a learned convolutional
-   correction, then normalizes the transmitted signal.
+SIRA-DeepJSCC trains the encoder and decoder to preserve semantically important
+regions, then learns how to allocate transmit power across the latent symbols
+produced by that frozen backbone.
+
+### 1. Train a semantic backbone
+
+A frozen DINOv2 ViT-S/14 scores each image patch by the cosine similarity of its
+feature to the global image token. The scores are resized and normalized to
+form a spatial importance map. Backbone training uses ordinary MSE plus a
+second reconstruction term weighted by this map. The weighted term gives more
+influence to reconstruction errors in important regions.
+
+### 2. Freeze the backbone and train the power adapter
+
+The encoder and decoder are frozen during this stage. Training updates about
+500,000 adapter parameters. The transmitter then uses the following pipeline:
+
+```mermaid
+flowchart LR
+    X["Input image"] --> E["Frozen encoder"] --> Z["Latent symbols"]
+    X --> M["M: semantic importance"]
+    V["Decoder sensitivity"] --> A["A: power allocation"]
+    M --> A
+    S["Given SNR"] --> R["R: channel conditioning"] --> A
+    Z --> T["Scale and normalize"]
+    A --> T
+    T --> C["Noisy channel"] --> D["Frozen decoder"]
+```
+
+- **Semantic importance (M).** A lightweight multiscale CNN learns to predict
+  the DINOv2 importance map using an L1 supervision term. It produces
+  importance scores at the latent resolution. The transmitter runs this CNN
+  at inference time, so DINOv2 is only needed for training the model.
+- **Decoder sensitivity and symbol risk.** During adapter training, the
+  frozen decoder reconstructs the image from clean latents. The magnitude of
+  the gradient of the reconstruction MSE with respect to each latent symbol
+  gives a sensitivity score. Inference uses an exponential moving average
+  accumulated during training. Multiplying this score by semantic importance
+  and normalizing the product gives the per-symbol risk $s_i$.
+- **Channel conditioning (R).** The transmitter receives the SNR as an input.
+  R converts it from dB to linear SNR $\gamma$ for water-filling, and a small
+  MLP produces a channel embedding and a temperature. The embedding conditions
+  the convolutional correction, and the temperature adjusts the concentration
+  of the risk scores entering that correction.
+- **Power allocation (A).** The hard mode uses a KKT water-filling prior with
+  per-symbol weight $[\sqrt{s_i/\gamma}/\mu - 1/\gamma]_+$, where $\mu$ is
+  found by bisection to meet the power budget. A small CNN predicts a second
+  allocation, and a learned gate mixes it with the prior. The optional soft
+  mode blends the prior with a square-root-of-risk allocation, with more
+  weight on that term at lower SNR. The main result uses hard water-filling.
+- **Transmit power normalization.** The adapter normalizes the allocation
+  weights and scales each latent amplitude by the square root of its weight.
+  It then normalizes the resulting signal per image to unit average power
+  before sending it through the channel.
+
+See the [model implementation](sira/models.py) and [training loop](scripts/train.py).
 
 ## Quick Start
 

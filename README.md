@@ -8,8 +8,6 @@ This repository is also an empirical study of when semantic protection helps,
 when it saturates, and which parts of an adaptive communication module actually
 contribute.
 
-![Low-SNR gains](results/low_snr_awgn_c2_gains_pub.png)
-
 ## What SIRA Does
 
 ```text

@@ -38,14 +38,11 @@ The encoder and decoder remain frozen for all SIRA variants.
 
 ## Main Findings
 
-- Semantic protection is most useful under constrained bandwidth (`c=2`) and
-  low SNR; gains largely shrink when bandwidth is less constrained (`c=4`).
+- In the three-seed AWGN runs, adding the SIRA adapter to CNN-DeepJSCC
+  produced small ROI PSNR changes that varied by dataset and SNR.
 - The adapter depends on the representation quality of the frozen backbone.
   This repository therefore supports **backbone compatibility**, not a strong
   architecture-agnostic claim.
-- Reusing DINOv2 semantics in both the semantic backbone and M leaves limited
-  marginal improvement, suggesting diminishing returns from already-captured
-  semantic information.
 - Removing R produces nearly identical reconstruction quality. Sensitivity
   analysis shows that R changes the power-map pattern, but the allocation
   magnitude remains weak and does not consistently concentrate more power under
@@ -256,8 +253,8 @@ More detailed experiment notes are in
 - Results currently use a single compact CNN DeepJSCC architecture.
 - B1 and B2 share the same architecture, so initialization experiments do not
   establish architecture-level backbone agnosticism.
-- The semantic backbone and SIRA semantic mapper both use DINOv2, which may
-  reduce marginal adapter gains.
+- The adapter can offer limited additional gains after semantic-weighted
+  training, possibly because both stages use DINOv2-derived importance.
 - R responds to SNR but does not yet provide stable reconstruction gains.
 - Current tracked results are exploratory single-run measurements.
 

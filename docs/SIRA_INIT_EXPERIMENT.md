@@ -1,93 +1,22 @@
-# SIRA-B1-init vs SIRA-B2-init
+# Training DeepJSCC and SIRA-DeepJSCC
 
-## 方法定义
-
-- `cnn`: B1 CNN-DeepJSCC，全模型训练。
-- `semantic`: B2 Semantic-weighted，全模型训练。
-- `sira_b1_init`: 加载 `cnn` checkpoint，冻结 encoder/decoder，只训练 M/R/A。
-- `sira_b2_init`: 加载 `semantic` checkpoint，冻结 encoder/decoder，只训练 M/R/A。
-- `sira`: 旧版 `sira_b1_init` 别名，仅用于兼容已有 checkpoint。
-
-## 公平对比
-
-`sira_b1_init` 和 `sira_b2_init` 使用：
-
-- 相同的 M/R/A 网络结构；
-- 相同的随机种子和数据顺序；
-- 相同的学习率、epoch、损失函数和 SNR 采样；
-- 不同的冻结 backbone checkpoint。
-
-因此，两者差异主要反映冻结 backbone 表示质量的影响。
-
-## 训练
-
-先确保 B1/B2 checkpoint 已存在：
+DeepJSCC trains its encoder and decoder jointly with mean squared error.
+SIRA-DeepJSCC first trains an encoder and decoder with DINOv2-weighted
+reconstruction, then freezes both networks and trains the transmit power
+adapter from that checkpoint.
 
 ```bash
-python -m scripts.train --latent_ch 2 --methods cnn semantic
+python -m scripts.train --latent_ch 1 --allocation_mode hard --importance_mode dino
 ```
 
-然后训练两个 SIRA 版本：
+The trainer runs the baseline, the first stage of SIRA-DeepJSCC and adapter
+training in that order. The first-stage checkpoint is an input to adapter
+training. The default evaluation compares the two finished models.
 
-```bash
-python -m scripts.train --latent_ch 2 --methods sira_b1_init sira_b2_init
-```
+Existing checkpoints are reused by default. Add `--force` to retrain.
+The `.pt` checkpoint records the best validation epoch, while
+`_final.pt` records the last epoch. Use the same latent channel count and
+allocation mode when training and evaluating.
 
-如果 checkpoint 已存在并需要重新训练：
-
-```bash
-python -m scripts.train --latent_ch 2 --methods sira_b1_init sira_b2_init --force
-```
-
-训练输出：
-
-```text
-checkpoints/sira_b1_init_awgn_c2.pt
-checkpoints/sira_b2_init_awgn_c2.pt
-```
-
-`.pt` 是最佳验证 checkpoint；`_final.pt` 是最后一轮 checkpoint。
-
-## DIV2K 与 Kodak 评估
-
-```bash
-python -m scripts.eval \
-  --latent_ch 2 \
-  --methods cnn semantic sira_b1_init sira_b2_init
-```
-
-## COCO Object ROI 评估
-
-```bash
-python -m scripts.eval_coco \
-  --coco_root data/coco \
-  --latent_ch 2 \
-  --methods cnn semantic sira_b1_init sira_b2_init
-```
-
-## Power Map 可视化
-
-```bash
-python -m scripts.visualize_power_map \
-  --latent_ch 2 \
-  --method sira_b1_init \
-  --dataset coco \
-  --index 20 \
-  --snrs -2 5 15 \
-  --out results/power_map_sira_b1_c2.png
-
-python -m scripts.visualize_power_map \
-  --latent_ch 2 \
-  --method sira_b2_init \
-  --dataset coco \
-  --index 20 \
-  --snrs -2 5 15 \
-  --out results/power_map_sira_b2_c2.png
-```
-
-## 结果解释
-
-- 若 `SIRA-B2-init > SIRA-B1-init`，说明 SIRA 能受益于更语义友好的冻结 backbone。
-- 若两者都优于各自 backbone，说明 M/R/A 作为轻量保护适配器有效。
-- 该实验支持 `backbone-compatible` 或 `compatible with different pretrained DeepJSCC backbones`。
-- 因为 B1/B2 架构相同，该实验本身不足以严格证明 `architecture-agnostic`。
+See the [README](../README.md#training-and-evaluation) for the three-seed
+evaluation command.

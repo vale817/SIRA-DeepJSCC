@@ -79,7 +79,6 @@ if [ "${RUN_TRAIN}" = "1" ]; then
     python -m scripts.train \
         --latent_ch "${LATENT_CH}" \
         --batch_size "${BATCH_SIZE}" \
-        --methods cnn semantic sira_b1_init sira_b2_init \
         --importance_mode "${SIRA_IMPORTANCE_MODE}"
 else
     echo "  training skipped; use RUN_TRAIN=1 to enable"
@@ -88,7 +87,6 @@ fi
 if [ "${RUN_EVAL}" = "1" ]; then
     python -m scripts.eval \
         --latent_ch "${LATENT_CH}" \
-        --methods cnn semantic sira_b1_init sira_b2_init \
         --importance_mode "${SIRA_IMPORTANCE_MODE}" \
         --result_dir "results/run_c${LATENT_CH}"
 else

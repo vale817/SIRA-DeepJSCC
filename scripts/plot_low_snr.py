@@ -29,7 +29,7 @@ DATASETS = [
 PUB_STYLE = {
     # Soft journal-style palette inspired by blue/teal/gold scientific figures.
     'cnn': {
-        'label': 'CNN-DeepJSCC',
+        'label': 'DeepJSCC',
         'color': '#6E7781',
         'marker': 'o',
         'linestyle': '--',
@@ -57,7 +57,7 @@ PUB_STYLE = {
         'hatch': '',
     },
     'sira_b2_init': {
-        'label': 'SIRA-B2-init',
+        'label': 'SIRA-DeepJSCC',
         'color': '#3ABF99',
         'marker': 's',
         'linestyle': '-.',
@@ -177,7 +177,7 @@ def fmt(x):
 
 def write_markdown(rows, path):
     with open(path, 'w') as f:
-        f.write('| Dataset | SNR | Method | PSNR | ROI PSNR | Delta PSNR vs B1 | Delta ROI vs B1 |\n')
+        f.write('| Dataset | SNR | Method | PSNR | ROI PSNR | Delta PSNR vs DeepJSCC | Delta ROI vs DeepJSCC |\n')
         f.write('|---|---:|---|---:|---:|---:|---:|\n')
         for r in rows:
             f.write(
@@ -235,8 +235,8 @@ def plot_gain_figure(rows, result_specs, low_snrs, path):
 
     for row_idx, (_, dataset_title, _, _) in enumerate(result_specs):
         for col_idx, (metric, ylabel, title) in enumerate([
-            ('delta_psnr_vs_b1', 'PSNR gain vs B1 (dB)', 'Global PSNR Gain'),
-            ('delta_roi_vs_b1', 'ROI gain vs B1 (dB)', 'ROI PSNR Gain'),
+            ('delta_psnr_vs_b1', 'PSNR gain vs DeepJSCC (dB)', 'Global PSNR Gain'),
+            ('delta_roi_vs_b1', 'ROI gain vs DeepJSCC (dB)', 'ROI PSNR Gain'),
         ]):
             ax = axes[row_idx][col_idx]
             gains = get_gain_matrix(rows, dataset_title, metric, compare_methods, low_snrs)

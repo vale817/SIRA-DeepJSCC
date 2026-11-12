@@ -10,11 +10,11 @@ import sys
 from sira.config import (
     BATCH_SIZE, CHANNEL, CKPT_DIR, EPOCHS_B1, EPOCHS_B2, EPOCHS_SIRA,
     IMPORTANCE_MODE, LATENT_CH, RESULT_DIR, SEED, ALLOCATION_MODE,
+    DEFAULT_TRAIN_METHODS, DEFAULT_EVAL_METHODS,
 )
 from sira.models import SIRA_METHODS
 
 
-DEFAULT_METHODS = ['cnn', 'semantic', 'sira_b1_init', 'sira_b2_init']
 DATASET_FILES = {
     'div2k': 'div2k_{channel}_c{latent_ch}.json',
     'kodak': 'kodak_{channel}_c{latent_ch}.json',
@@ -106,7 +106,7 @@ def aggregate_results(result_root, seeds, channel, latent_ch, include_coco=False
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--seeds', nargs='+', type=int, default=[SEED, SEED + 1, SEED + 2])
-    parser.add_argument('--methods', nargs='+', default=DEFAULT_METHODS,
+    parser.add_argument('--methods', nargs='+',
                         choices=['cnn', 'semantic'] + list(SIRA_METHODS))
     parser.add_argument('--eval_methods', nargs='+', default=None,
                         choices=['cnn', 'semantic'] + list(SIRA_METHODS))
@@ -134,7 +134,8 @@ def main():
     parser.add_argument('--dry_run', action='store_true')
     args = parser.parse_args()
 
-    eval_methods = args.eval_methods or args.methods
+    train_methods = args.methods or DEFAULT_TRAIN_METHODS
+    eval_methods = args.eval_methods or args.methods or DEFAULT_EVAL_METHODS
     os.makedirs(args.ckpt_root, exist_ok=True)
     os.makedirs(args.result_root, exist_ok=True)
 
@@ -147,7 +148,7 @@ def main():
         if not args.skip_train:
             train_cmd = [
                 sys.executable, '-m', 'scripts.train',
-                '--methods', *args.methods,
+                '--methods', *train_methods,
                 '--channel', args.channel,
                 '--latent_ch', str(args.latent_ch),
                 '--epochs_b1', str(args.epochs_b1),

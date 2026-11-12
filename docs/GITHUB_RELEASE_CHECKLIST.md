@@ -13,8 +13,8 @@ Before making the repository public:
 
 Suggested repository description:
 
-> Parameter-efficient semantic power allocation for DeepJSCC, with low-SNR,
-> object-ROI, frozen-backbone, and reliability-mapper analyses.
+> DeepJSCC and SIRA-DeepJSCC for wireless image transmission, with semantic
+> training, frozen-backbone power adaptation, and matched-seed ROI evaluation.
 
 Suggested topics:
 

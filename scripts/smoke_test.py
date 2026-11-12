@@ -2,6 +2,7 @@
 """Data-free structural smoke test for all implemented model variants."""
 import torch
 
+from sira.config import DEFAULT_EVAL_METHODS, METHOD_NAMES
 from sira.models import DeepJSCC, SIRA_METHODS, stabilized_water_filling_power
 
 
@@ -50,11 +51,12 @@ def main():
             )
             assert model._last_sira['semantic_risk'].shape == (2, 2, 32, 32)
 
-        print(
-            f'{method:>14}: output={tuple(output.shape)} '
-            f'trainable={count_parameters(model, trainable_only=True):,} '
-            f'total={count_parameters(model):,}'
-        )
+        if method in DEFAULT_EVAL_METHODS:
+            print(
+                f'{METHOD_NAMES[method]:>14}: output={tuple(output.shape)} '
+                f'trainable={count_parameters(model, trainable_only=True):,} '
+                f'total={count_parameters(model):,}'
+            )
 
     no_r = DeepJSCC(method='sira_b2_no_r', latent_ch=2, input_size=64)
     assert not any(name.startswith('R.') for name, _ in no_r.named_parameters())

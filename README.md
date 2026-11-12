@@ -1,87 +1,35 @@
-# SIRA: Semantic-Informed Reliability Adaptation for DeepJSCC
+# SIRA-DeepJSCC
 
-SIRA is a two-stage framework for semantic-aware image transmission over noisy
-channels. It trains a DeepJSCC backbone with DINOv2-weighted reconstruction,
-then freezes the encoder and decoder and trains a lightweight transmit power
-adapter conditioned on image semantics and SNR.
+This repository compares **DeepJSCC**, a PyTorch CNN baseline based on the
+[original DeepJSCC approach](https://arxiv.org/abs/1809.01733), with
+**SIRA-DeepJSCC**, a two-stage framework for semantic-aware image transmission.
 
-This repository is also an empirical study of when semantic protection helps,
-when it saturates, and which parts of an adaptive communication module actually
-contribute.
+| Model | Training and transmission |
+|---|---|
+| **DeepJSCC** | Train the encoder and decoder end to end with mean squared error. |
+| **SIRA-DeepJSCC** | Train the backbone with DINOv2-weighted reconstruction, then freeze the encoder and decoder and train a lightweight transmit power adapter. |
 
 ## Main Result
 
-![ROI PSNR across six SNR levels at c=1. SIRA is above CNN-DeepJSCC on Kodak-24 and COCO object regions. Lower panels show the paired gains.](results/sira_main_roi_c1.png)
+![ROI PSNR curves for DeepJSCC and SIRA-DeepJSCC at six SNR levels on Kodak-24 and COCO object regions. Lower panels show paired differences.](results/sira_main_roi_c1.png)
 
-With one latent channel (`c=1`), AWGN and hard water-filling, SIRA has higher
-mean ROI PSNR on Kodak-24 semantic regions and COCO val2017 object regions at
-all six evaluated SNRs. Curves and paired differences show mean ± standard
-deviation across three seeds (42–44).
+With one latent channel (`c=1`) under AWGN and hard water-filling,
+SIRA-DeepJSCC has higher mean ROI PSNR than DeepJSCC on Kodak-24 semantic
+regions and COCO val2017 object regions at all six evaluated SNRs. The curves
+and paired differences show mean ± standard deviation across seeds 42–44.
 
 [Per-seed data](results/sira_main_roi_c1.csv) · [Plotting script](scripts/plot_main_roi.py)
 
-## What SIRA Does
+## How SIRA-DeepJSCC Works
 
-```text
-image x -> frozen encoder -> latent z -> spatial power allocation -> channel -> frozen decoder
-              |                         ^
-              +-> M: semantic map ------|
-SNR ----------------> R: reliability ---+-> A: protection adapter
-```
-
-- **M, Semantic Prior Mapper:** predicts spatial importance from the input image.
-- **R, Channel Reliability Mapper:** maps SNR to a reliability embedding and a
-  power-allocation temperature.
-- **A, Protection Adapter:** combines semantic and reliability information to
-  produce a normalized spatial power map.
-
-The encoder and decoder remain frozen for all SIRA variants.
-
-## Implemented Methods
-
-| Method | Backbone initialization | Trainable components |
-|---|---|---|
-| `cnn` | trained from scratch with MSE | encoder + decoder |
-| `semantic` | trained from scratch with MSE + DINOv2-weighted reconstruction | encoder + decoder |
-| `sira_b1_init` | `cnn` checkpoint | M + R + A |
-| `sira_b2_init` | `semantic` checkpoint | M + R + A |
-| `sira_b2_no_r` | `semantic` checkpoint | M + A |
-| `sira` | legacy alias of `sira_b1_init` | M + R + A |
-
-## Main Findings
-
-- In the three-seed AWGN runs, adding the SIRA adapter to CNN-DeepJSCC
-  produced small ROI PSNR changes that varied by dataset and SNR.
-- The adapter depends on the representation quality of the frozen backbone.
-  This repository therefore supports **backbone compatibility**, not a strong
-  architecture-agnostic claim.
-- Removing R produces nearly identical reconstruction quality. Sensitivity
-  analysis shows that R changes the power-map pattern, but the allocation
-  magnitude remains weak and does not consistently concentrate more power under
-  poor channel conditions.
-
-These are empirical findings from the included experimental setup, not claims
-of universal behavior.
-
-## Evaluation
-
-Experiments cover:
-
-- **DIV2K:** in-domain reconstruction. The `c=1` run used the training split.
-- **Kodak-24:** zero-shot image-domain generalization.
-- **COCO val2017:** object-ROI reconstruction using ground-truth bounding boxes.
-- **AWGN channels:** SNR sweep `[-2, 0, 2, 5, 10, 15]` dB.
-- **Metrics:** PSNR, SSIM, LPIPS, semantic ROI PSNR, and COCO object-ROI PSNR.
-
-The tracked `results/` files include the three-seed ROI comparison above and
-historical exploratory runs. DeepJSCC
-evaluation samples channel noise during inference. The evaluation scripts reset
-the same seed before each method for matched-noise comparisons; serious
-comparisons should still report repeated seeds with confidence intervals.
-
-Training also resets the random state after model and DINOv2 initialization so
-adapter variants receive matched data order, sampled SNRs, and channel-noise
-sequences.
+1. **Semantic training.** DINOv2-derived importance weights the reconstruction
+   loss used to train the encoder and decoder.
+2. **Power adaptation.** Freeze the encoder and decoder and train the
+   approximately 500,000 parameters of the transmit power adapter. A small CNN
+   predicts semantic importance, and reconstruction gradients estimate decoder
+   sensitivity. Their product defines risk at each latent symbol. The adapter
+   combines SNR-conditioned KKT water-filling with a learned convolutional
+   correction, then normalizes the transmitted signal.
 
 ## Quick Start
 
@@ -144,133 +92,53 @@ export SIRA_IMPORTANCE_MODE=edge
 The edge mode is a debugging fallback and is not equivalent to the reported
 DINOv2 experiments.
 
-## Training
+## Training and Evaluation
 
-Train the two backbones first:
-
-```bash
-python -m scripts.train --latent_ch 2 --methods cnn semantic
-```
-
-Then train frozen-backbone adapters:
+Train DeepJSCC and both stages of SIRA-DeepJSCC in order:
 
 ```bash
-python -m scripts.train \
-  --latent_ch 2 \
-  --methods sira_b1_init sira_b2_init sira_b2_no_r \
-  --allocation_mode hard \
-  --batch_size 16
+python -m scripts.train --latent_ch 1 --allocation_mode hard --importance_mode dino
 ```
 
-Existing checkpoints are skipped unless `--force` is passed. Best-validation
-checkpoints are saved as `.pt`; final-epoch checkpoints use `_final.pt`.
-`--allocation_mode hard` is the default KKT water-filling method. Use
-`--allocation_mode soft` for the low-SNR stabilized sqrt-risk blend. Training
-and evaluation must use the same allocation mode.
+Evaluate the two finished models on Kodak-24 and COCO val2017:
 
-Multi-seed validation trains and evaluates each seed in its own checkpoint and
-result directory, then writes mean/std summaries:
+```bash
+python -m scripts.eval --latent_ch 1 --allocation_mode hard --importance_mode dino --skip_div2k
+python -m scripts.eval_coco --latent_ch 1 --allocation_mode hard --coco_root data/coco
+```
+
+Run the comparison with all three seeds:
 
 ```bash
 python -m scripts.run_multiseed \
   --seeds 42 43 44 \
-  --latent_ch 2 \
-  --methods cnn semantic sira_b1_init sira_b2_init sira_b2_no_r \
+  --latent_ch 1 \
   --allocation_mode hard \
-  --importance_mode dino
+  --importance_mode dino \
+  --skip_div2k \
+  --eval_coco --coco_root data/coco
 ```
 
-For a quick wiring check before the full run, use `--importance_mode edge`,
-small epochs, and `--dry_run` first.
+The AWGN evaluation uses SNRs of −2, 0, 2, 5, 10 and 15 dB. The scripts
+report global PSNR, SSIM, LPIPS and ROI PSNR. Kodak-24 ROI comes from DINOv2
+importance maps, while COCO val2017 ROI comes from annotated object boxes.
+The archived `c=1` DIV2K run evaluated the training split, so it is outside the
+main comparison.
 
-## Evaluation and Analysis
-
-DIV2K and Kodak:
-
-```bash
-python -m scripts.eval \
-  --latent_ch 2 \
-  --methods cnn semantic sira_b1_init sira_b2_init sira_b2_no_r \
-  --result_dir results/run_c2
-```
-
-COCO object ROI:
-
-```bash
-python -m scripts.eval_coco \
-  --coco_root data/coco \
-  --latent_ch 2 \
-  --methods cnn semantic sira_b1_init sira_b2_init sira_b2_no_r \
-  --result_dir results/run_c2
-```
-
-Low-SNR summary:
-
-```bash
-python -m scripts.plot_low_snr --latent_ch 2 --result_dir results/run_c2
-```
-
-Power-map visualization:
-
-```bash
-python -m scripts.visualize_power_map \
-  --latent_ch 2 \
-  --method sira_b2_init \
-  --dataset kodak \
-  --index 3 \
-  --snrs -2 5 15 \
-  --out results/run_c2/power_map_sira_b2.png
-```
-
-R-module sensitivity:
-
-```bash
-python -m scripts.analyze_r_sensitivity \
-  --latent_ch 2 \
-  --dataset kodak \
-  --methods sira_b2_init sira_b2_no_r \
-  --result_dir results/run_c2
-```
-
-## Repository Map
-
-```text
-SIRA-DeepJSCC/
-  sira/       # core models, datasets, and configuration
-  scripts/    # training, evaluation, plotting, and analysis entry points
-  docs/       # experiment definitions, findings, and release notes
-  results/    # representative JSON, tables, and figures
-```
-
-| Path | Purpose |
-|---|---|
-| `sira/models.py` | DeepJSCC, DINOv2 importance, M/R/A, channels, and losses |
-| `sira/datasets.py` | DIV2K and Kodak data loaders |
-| `sira/config.py` | experiment defaults and paths |
-| `scripts/train.py` | backbone and adapter training |
-| `scripts/eval.py` | DIV2K/Kodak reconstruction evaluation |
-| `scripts/eval_coco.py` | COCO object-ROI evaluation |
-| `scripts/plot_low_snr.py` | publication-style low-SNR tables and figures |
-| `scripts/visualize_power_map.py` | reconstruction, power-map, and error visualization |
-| `scripts/analyze_r_sensitivity.py` | quantitative SNR-to-power-map analysis |
-| `scripts/smoke_test.py` | data-free structural check for every model variant |
-| `docs/` | experiment definitions, findings, and release notes |
-
-More detailed experiment notes are in
-[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md),
-[docs/SIRA_INIT_EXPERIMENT.md](docs/SIRA_INIT_EXPERIMENT.md), and
-[docs/SIRA_NO_R_ABLATION.md](docs/SIRA_NO_R_ABLATION.md).
+- [Experiment notes](docs/PROJECT_STATUS.md)
+- [Training details](docs/SIRA_INIT_EXPERIMENT.md)
+- [Results and archive](results/README.md)
 
 ## Limitations
 
-- Results currently use a single compact CNN DeepJSCC architecture.
-- B1 and B2 share the same architecture, so initialization experiments do not
-  establish architecture-level backbone agnosticism.
-- The adapter can offer limited additional gains after semantic-weighted
-  training, possibly because both stages use DINOv2-derived importance.
-- R responds to SNR but does not yet provide stable reconstruction gains.
+- Both models use the same compact CNN architecture.
+- The comparison measures the combined effect of semantic training and power
+  adaptation. Semantic training appears to account for much of the observed
+  ROI improvement. Both stages use DINOv2-derived importance, which may leave
+  limited room for the adapter to add complementary information.
+- The comparison covers two test datasets and three seeds at the displayed
+  bandwidth setting.
 
 ## Citation
 
-A preprint is in preparation. Citation information will be added when it is
-available.
+A preprint is in preparation. Citation information will be added when available.

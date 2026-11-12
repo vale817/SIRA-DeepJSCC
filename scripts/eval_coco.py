@@ -24,6 +24,7 @@ from tqdm import tqdm
 from sira.config import (
     CHANNEL, LATENT_CH, SNR_SWEEP, CKPT_DIR, RESULT_DIR,
     METHOD_NAMES, METHOD_STYLE, CROP_SIZE, SEED, ALLOCATION_MODE,
+    DEFAULT_EVAL_METHODS,
 )
 from sira.models import (
     DeepJSCC, DEVICE, SIRA_METHODS, load_compatible_state_dict,
@@ -313,12 +314,12 @@ def print_table(results_dict, snr_sweep, methods):
         for method in [m for m in SIRA_METHODS if m in results_dict]:
             name = METHOD_NAMES.get(method, method)
             print(f'\n{name}:')
-            print(f"{'SNR':>5} | {'ObjROI':>9} | {'ObjROI B1':>9} | {'Delta':>8}")
+            print(f"{'SNR':>5} | {'ObjROI':>9} | {'DeepJSCC ROI':>12} | {'Delta':>8}")
             print('-' * 41)
             for i, snr in enumerate(snr_sweep):
                 sira = results_dict[method]['object_roi_psnr'][i]
                 b1 = results_dict['cnn']['object_roi_psnr'][i]
-                print(f'{snr:>5} | {sira:>9.2f} | {b1:>9.2f} | {sira-b1:>+8.3f}')
+                print(f'{snr:>5} | {sira:>9.2f} | {b1:>12.2f} | {sira-b1:>+8.3f}')
 
 
 def main():
@@ -326,7 +327,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--coco_root', default='data/coco')
     parser.add_argument('--methods', nargs='+',
-                        default=['cnn', 'semantic', 'sira_b1_init', 'sira_b2_init'],
+                        default=DEFAULT_EVAL_METHODS,
                         choices=['cnn', 'semantic'] + list(SIRA_METHODS))
     parser.add_argument('--channel', default=CHANNEL)
     parser.add_argument('--latent_ch', type=int, default=LATENT_CH)

@@ -21,7 +21,7 @@ from sira import models
 from sira.config import (
     CHANNEL, LATENT_CH, SNR_SWEEP, CKPT_DIR, RESULT_DIR,
     METHOD_NAMES, METHOD_STYLE, CROP_SIZE, IMPORTANCE_MODE, SEED,
-    ALLOCATION_MODE,
+    ALLOCATION_MODE, DEFAULT_EVAL_METHODS,
 )
 from sira.datasets import get_div2k_loaders, get_kodak_loader
 from sira.models import (
@@ -192,19 +192,19 @@ def print_table(results_dict, snr_sweep, methods):
             row += f"  PSNR={d['psnr'][i]:5.2f} ROI={d['roi_psnr'][i]:5.2f} SSIM={d['ssim'][i]:.4f}"
         print(row)
 
-    # ΔROI vs B1
+    # ROI gain over DeepJSCC
     sira_methods = [m for m in SIRA_METHODS if m in results_dict]
     if sira_methods and 'cnn' in results_dict:
         for method in sira_methods:
             name = METHOD_NAMES.get(method, method)
             print(f"\n{name}:")
-            print(f"{'SNR':>5} | {'ROI-PSNR':>9} | {'BG-PSNR':>8} | {'ΔROI vs B1':>11}")
+            print(f"{'SNR':>5} | {'ROI-PSNR':>9} | {'BG-PSNR':>8} | {'ΔROI vs DeepJSCC':>17}")
             print('-' * 43)
             for i, snr in enumerate(snr_sweep):
                 roi  = results_dict[method]['roi_psnr'][i]
                 bg   = results_dict[method]['bg_psnr'][i]
                 b1   = results_dict['cnn']['roi_psnr'][i]
-                print(f'{snr:>5} | {roi:>9.2f} | {bg:>8.2f} | {roi-b1:>+11.2f}')
+                print(f'{snr:>5} | {roi:>9.2f} | {bg:>8.2f} | {roi-b1:>+17.2f}')
 
 
 # ── main ──────────────────────────────────────────────────────
@@ -213,7 +213,7 @@ def main():
     global CKPT_DIR, RESULT_DIR
     parser = argparse.ArgumentParser()
     parser.add_argument('--methods',    nargs='+',
-                        default=['cnn','semantic','sira_b1_init','sira_b2_init'],
+                        default=DEFAULT_EVAL_METHODS,
                         choices=['cnn', 'semantic'] + list(SIRA_METHODS))
     parser.add_argument('--channel',    default=CHANNEL)
     parser.add_argument('--latent_ch',  type=int, default=LATENT_CH)

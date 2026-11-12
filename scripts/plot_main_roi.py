@@ -17,8 +17,8 @@ DATASETS = {
     'COCO val2017': ('COCO val2017', 'Ground-truth object boxes'),
 }
 METHODS = {
-    'cnn_deepjscc_roi_psnr_db': ('CNN-DeepJSCC', '#4F5D75', '--', 'o'),
-    'sira_roi_psnr_db': ('SIRA', '#007B70', '-', 'D'),
+    'cnn_deepjscc_roi_psnr_db': ('DeepJSCC', '#4F5D75', '--', 'o'),
+    'sira_roi_psnr_db': ('SIRA-DeepJSCC', '#007B70', '-', 'D'),
 }
 SNRS = [-2, 0, 2, 5, 10, 15]
 SEEDS = [42, 43, 44]
@@ -94,7 +94,7 @@ def main():
     fig.legend(handles, labels, frameon=False, ncols=2, loc='upper right',
                bbox_to_anchor=(0.978, 0.967), fontsize=10)
     fig.text(0.09, 0.048,
-             'Mean ± SD across seeds. Bottom panels show paired differences (SIRA − CNN-DeepJSCC).',
+             'Mean ± SD across seeds. Bottom panels show paired differences (SIRA-DeepJSCC − DeepJSCC).',
              fontsize=9, color='#4F5D75')
 
     fig.savefig(RESULTS / f'{STEM}.png', dpi=200, facecolor='white', metadata={

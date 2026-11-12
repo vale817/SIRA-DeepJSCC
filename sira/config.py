@@ -13,8 +13,8 @@ RESULT_DIR     = './results'
 # ── 训练超参数 ────────────────────────────────────────────────
 CHANNEL        = 'awgn'          # 'awgn' or 'rayleigh'
 LATENT_CH      = 4
-EPOCHS_B1      = 100             # B1 (cnn) 训练轮数
-EPOCHS_B2      = 100             # B2 (semantic) 训练轮数
+EPOCHS_B1      = 100             # DeepJSCC training epochs
+EPOCHS_B2      = 100             # SIRA-DeepJSCC backbone training epochs
 EPOCHS_SIRA    = 100             # SIRA 训练轮数（只训 M/R/A）
 BATCH_SIZE     = 16              # DIV2K 256×256 crop，4090 可以开到 32
 LR             = 1e-3
@@ -40,13 +40,17 @@ DINO_HUB_DIR     = os.getenv('SIRA_DINO_HUB_DIR', './.torch_hub')
 DINO_SOURCE      = os.getenv('SIRA_DINO_SOURCE', 'github')  # 'github' or 'local'
 DINO_REPO_OR_DIR = os.getenv('SIRA_DINO_REPO_OR_DIR', 'facebookresearch/dinov2')
 
+# Train the intermediate backbone before the complete SIRA-DeepJSCC model.
+DEFAULT_TRAIN_METHODS = ('cnn', 'semantic', 'sira_b2_init')
+DEFAULT_EVAL_METHODS = ('cnn', 'sira_b2_init')
+
 # ── 样式（画图用）────────────────────────────────────────────
 METHOD_NAMES = {
-    'cnn':      'B1: CNN-DeepJSCC',
-    'semantic': 'B2: Semantic-weighted',
+    'cnn':      'DeepJSCC',
+    'semantic': 'SIRA-DeepJSCC backbone training',
     'sira':     'Ours: SIRA-B1-init',
     'sira_b1_init': 'Ours: SIRA-B1-init',
-    'sira_b2_init': 'Ours: SIRA-B2-init',
+    'sira_b2_init': 'SIRA-DeepJSCC',
     'sira_b2_no_r': 'Ablation: SIRA-B2 w/o R',
 }
 METHOD_STYLE = {

@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
 # ============================================================
-# train.py  —  训练 B1 / B2 / SIRA，顺序执行
-# 用法：python -m scripts.train
-#      python -m scripts.train --methods cnn
-#      python -m scripts.train --methods sira_b1_init
-#      python -m scripts.train --methods sira_b2_init
-#      python -m scripts.train --methods sira_b2_no_r
-#      python -m scripts.train --channel rayleigh
+# Train DeepJSCC and SIRA-DeepJSCC, including the semantic pretraining stage.
+# Usage: python -m scripts.train
 # ============================================================
 import os
 import argparse
@@ -22,6 +17,7 @@ from sira.config import (
     CHANNEL, LATENT_CH, EPOCHS_B1, EPOCHS_B2, EPOCHS_SIRA,
     BATCH_SIZE, LR, TRAIN_SNR_RANGE, SNR_SWEEP,
     CKPT_DIR, RESULT_DIR, SEED, IMPORTANCE_MODE, ALLOCATION_MODE,
+    DEFAULT_TRAIN_METHODS, METHOD_NAMES,
 )
 from sira.datasets import get_div2k_loaders
 from sira.models import (
@@ -71,7 +67,7 @@ def load_init_into_sira(net, init_method, channel=CHANNEL, latent_ch=LATENT_CH):
         )
     state = torch.load(src, map_location=DEVICE)
     missing, unexpected, skipped = load_compatible_state_dict(net, state)
-    print(f'loaded {init_method} checkpoint into {net.method} → {src}')
+    print(f'Loaded {METHOD_NAMES[init_method]} checkpoint for {METHOD_NAMES[net.method]} → {src}')
     print(
         f'  missing: {len(missing)} | unexpected: {len(unexpected)} '
         f'| skipped shape/name mismatches: {len(skipped)}'
@@ -82,6 +78,7 @@ def train_one_method(method, channel=CHANNEL, latent_ch=LATENT_CH,
                      epochs=50, batch_size=BATCH_SIZE, lr=LR, seed=SEED,
                      allocation_mode=ALLOCATION_MODE):
 
+    label = METHOD_NAMES[method]
     train_loader, val_loader = get_div2k_loaders(batch_size=batch_size)
 
     net = DeepJSCC(
@@ -95,7 +92,7 @@ def train_one_method(method, channel=CHANNEL, latent_ch=LATENT_CH,
         load_init_into_sira(net, SIRA_INIT_SOURCE[method], channel, latent_ch)
 
     if method in ('semantic',) + SIRA_METHODS and models.IMPORTANCE_MODE == 'dino':
-        print(f'[{method}] preloading DINOv2 importance model before training...', flush=True)
+        print(f'[{label}] preloading DINOv2 importance model before training...', flush=True)
         models.get_dinov2_model()
 
     # Model/DINO initialization may consume RNG state. Reset here so methods
@@ -103,7 +100,7 @@ def train_one_method(method, channel=CHANNEL, latent_ch=LATENT_CH,
     seed_everything(seed)
 
     trainable = [p for p in net.parameters() if p.requires_grad]
-    print(f'\n[{method}] trainable params: '
+    print(f'\n[{label}] trainable params: '
           f'{sum(p.numel() for p in trainable):,} / '
           f'{sum(p.numel() for p in net.parameters()):,}')
 
@@ -122,7 +119,7 @@ def train_one_method(method, channel=CHANNEL, latent_ch=LATENT_CH,
             net.decoder.eval()
 
         running = seen = 0
-        pbar = tqdm(train_loader, desc=f'[{method}] ep {ep}/{epochs}', leave=False)
+        pbar = tqdm(train_loader, desc=f'[{label}] ep {ep}/{epochs}', leave=False)
         for x, _ in pbar:
             x   = x.to(DEVICE, non_blocking=True)
             snr = torch.empty(x.shape[0], device=DEVICE).uniform_(lo, hi)
@@ -153,7 +150,7 @@ def train_one_method(method, channel=CHANNEL, latent_ch=LATENT_CH,
                     p_sum += 10 * math.log10(1.0 / (mse + 1e-12))
                     n     += 1
             val_psnr = p_sum / max(n, 1)
-            print(f'[{method}|{channel}|c{latent_ch}] '
+            print(f'[{label}|{channel}|c{latent_ch}] '
                   f'ep {ep:3d}/{epochs}  '
                   f'train_loss={running/seen:.5f}  '
                   f'val_PSNR@5dB={val_psnr:.2f}')
@@ -162,14 +159,14 @@ def train_one_method(method, channel=CHANNEL, latent_ch=LATENT_CH,
                 torch.save(net.state_dict(), ckpt_path(method, channel, latent_ch))
                 print(f'  ✓ checkpoint saved (best val PSNR={best_val_psnr:.2f})')
         else:
-            print(f'[{method}|{channel}|c{latent_ch}] '
+            print(f'[{label}|{channel}|c{latent_ch}] '
                   f'ep {ep:3d}/{epochs}  loss={running/seen:.5f}')
 
     # Keep the best validation checkpoint for evaluation; save the last epoch separately.
     final_path = ckpt_path(method, channel, latent_ch).replace('.pt', '_final.pt')
     torch.save(net.state_dict(), final_path)
-    print(f'[{method}] best checkpoint → {ckpt_path(method, channel, latent_ch)}')
-    print(f'[{method}] final-epoch checkpoint → {final_path}')
+    print(f'[{label}] best checkpoint → {ckpt_path(method, channel, latent_ch)}')
+    print(f'[{label}] final-epoch checkpoint → {final_path}')
     return net
 
 
@@ -177,7 +174,7 @@ def main():
     global CKPT_DIR
     parser = argparse.ArgumentParser()
     parser.add_argument('--methods',  nargs='+',
-                        default=['cnn', 'semantic', 'sira_b1_init', 'sira_b2_init'],
+                        default=DEFAULT_TRAIN_METHODS,
                         choices=['cnn', 'semantic'] + list(SIRA_METHODS))
     parser.add_argument('--channel',  default=CHANNEL)
     parser.add_argument('--latent_ch', type=int, default=LATENT_CH)
@@ -203,7 +200,8 @@ def main():
     models.IMPORTANCE_MODE = args.importance_mode
     seed_everything(args.seed)
     print(f'Device: {DEVICE}')
-    print(f'Methods to train: {args.methods}')
+    stages = ', '.join(METHOD_NAMES[method] for method in args.methods)
+    print(f'Training stages: {stages}')
     print(f'Channel: {args.channel}  latent_ch: {args.latent_ch}')
     print(f'Seed: {args.seed}')
     print(f'Checkpoint dir: {CKPT_DIR}')
@@ -239,7 +237,7 @@ def main():
         # 如果 checkpoint 已存在就跳过
         path = ckpt_path(method, args.channel, args.latent_ch)
         if os.path.exists(path) and not args.force:
-            print(f'\n[{method}] checkpoint already exists, skipping → {path}')
+            print(f'\n[{METHOD_NAMES[method]}] checkpoint already exists, skipping → {path}')
             continue
         train_one_method(
             method=method,
